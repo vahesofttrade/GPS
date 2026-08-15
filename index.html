@@ -80,6 +80,8 @@
   .kpi .v{font-family:var(--mono);font-size:16px;font-weight:700}
   .kpi .l{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
   .detail .track-btn{width:100%;margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:12px;font-weight:600;padding:9px;cursor:pointer}
+  .det-actions{display:flex;flex-direction:column}
+  #detScroll{flex:1;min-height:0}
   .detail .track-btn:hover{border-color:var(--acc)}
   .detail .close{position:absolute;top:8px;right:10px;background:none;border:none;color:var(--mut);font-size:16px;cursor:pointer}
 
@@ -204,7 +206,9 @@
     .units.mob-open{display:block}
     .maparea{width:100%}
     .side-toggle{display:flex}
-    .detail{left:8px;right:8px;bottom:8px;max-width:none;width:auto;max-height:calc(100vh - 90px);overflow-y:auto}
+    .detail{left:8px;right:8px;bottom:8px;max-width:none;width:auto;max-height:min(60vh,420px);display:flex;flex-direction:column}
+    .det-actions{flex-direction:row;gap:8px}
+    .det-actions .track-btn{margin-top:0;flex:1;font-size:12.5px;padding:10px 6px}
     .player-bar{left:8px;right:8px;bottom:8px;padding:10px 12px}
     .player-setup{left:8px;right:8px;width:auto}
     header{flex-wrap:wrap;position:relative}
@@ -395,14 +399,18 @@
         <button class="close" id="detClose">✕</button>
         <h3 id="detName">—</h3>
         <div class="sub" id="detTime">—</div>
-        <div class="kpis">
-          <div class="kpi"><div class="v" id="detSpd">—</div><div class="l">км/ч сейчас</div></div>
-          <div class="kpi"><div class="v" id="detKm">—</div><div class="l">км за сегодня</div></div>
-          <div class="kpi"><div class="v" id="detMax">—</div><div class="l">макс. км/ч</div></div>
-          <div class="kpi"><div class="v" id="detMove">—</div><div class="l">в движении</div></div>
+        <div id="detScroll" style="overflow-y:auto">
+          <div class="kpis">
+            <div class="kpi"><div class="v" id="detSpd">—</div><div class="l">км/ч сейчас</div></div>
+            <div class="kpi"><div class="v" id="detKm">—</div><div class="l">км за сегодня</div></div>
+            <div class="kpi"><div class="v" id="detMax">—</div><div class="l">макс. км/ч</div></div>
+            <div class="kpi"><div class="v" id="detMove">—</div><div class="l">в движении</div></div>
+          </div>
         </div>
-        <button class="track-btn" id="trackBtn">Показать трек за сегодня</button>
-        <button class="track-btn" id="histBtn" style="margin-top:8px;background:var(--panel2)">📜 История (стоянки/поездки)</button>
+        <div class="det-actions">
+          <button class="track-btn" id="trackBtn">Показать трек за сегодня</button>
+          <button class="track-btn" id="histBtn" style="background:var(--panel2)">📜 История</button>
+        </div>
       </div>
 
       <!-- ИСТОРИЯ ПО ДНЯМ: стоянки + поездки, как в родном приложении Wialon -->
