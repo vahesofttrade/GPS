@@ -578,6 +578,15 @@
           <tbody id="odBody"></tbody>
         </table>
         <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;padding:24px 16px 8px">Отклонения: факт против расчёта (по каждому вводу одометра)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 16px 12px">
+          <input type="text" id="odDevSearch" placeholder="Поиск по машине…" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:7px 10px;font-size:12px">
+          <select id="odDevCar" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:7px 10px;font-size:12px;min-width:160px"><option value="">Все машины</option></select>
+          <input type="date" id="odDevFrom" title="Период от" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font-size:12px;color-scheme:light">
+          <span style="color:var(--mut);font-size:12px">—</span>
+          <input type="date" id="odDevTo" title="Период до" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font-size:12px;color-scheme:light">
+          <button class="dbtn" id="odDevReset" style="padding:6px 12px;font-size:12px">✕ Сбросить</button>
+          <span id="odDevCount" style="color:var(--mut);font-size:12px;margin-left:auto;white-space:nowrap"></span>
+        </div>
         <table class="rep">
           <thead><tr>
             <th></th><th>Машина</th><th>Период</th><th>GPS за период</th><th>Расчёт</th><th>Факт (введено)</th><th>Отклонение</th>
@@ -976,7 +985,7 @@
       <h2>🚗 Машины и нормы</h2>
       <div style="overflow:auto;max-height:60vh">
         <table class="cm-table">
-          <thead><tr><th>Объект Wialon</th><th>Марка</th><th>Госномер</th><th>Топливо</th><th>Норма л/100км</th><th>Одометр, км</th><th>на дату</th><th>Масло: интервал, км</th><th>Масло: на пробеге, км</th><th>Масло: дата</th><th></th></tr></thead>
+          <thead><tr><th>Активна</th><th>Объект Wialon</th><th>Марка</th><th>Госномер</th><th>Топливо</th><th>Норма л/100км</th><th>Одометр, км</th><th>на дату</th><th>Масло: интервал, км</th><th>Масло: на пробеге, км</th><th>Масло: дата</th><th></th></tr></thead>
           <tbody id="cmBody"></tbody>
         </table>
       </div>
@@ -1823,7 +1832,8 @@ const SETUP_SQL = `create table if not exists cars (
   fuel text default 'бензин',
   norm numeric default 10,
   oil_interval int default 10000,
-  oil_last_date date
+  oil_last_date date,
+  active boolean default true
 );
 create table if not exists fuelings (
   id bigserial primary key,
@@ -1862,16 +1872,17 @@ async function dbAll(path){
 }
 
 let cars = {};   // unit_id -> запись
-function garageUnits(){
+function garageUnits(includeInactive){
   const list = units.map(u => ({ id:u.id, name:u.name, manual:false }));
   Object.values(cars).forEach(c => { if(c.is_manual) list.push({ id:c.unit_id, name:c.name || 'Без имени', manual:true }); });
-  return list;
+  if(includeInactive) return list;
+  return list.filter(g => !(cars[g.id] && cars[g.id].active === false));
 }
 async function loadCars(){
   const rows = await db('GET', 'cars?select=*');
   cars = {};
   rows.forEach(c => cars[c.unit_id] = c);
-  units.forEach(u => { if(!cars[u.id]) cars[u.id] = { unit_id:u.id, name:u.name, brand:'', plate:'', fuel:'бензин', norm:10, odo_value:null, odo_date:null, oil_interval:10000, oil_odo:null, oil_last_date:null, _new:true }; });
+  units.forEach(u => { if(!cars[u.id]) cars[u.id] = { unit_id:u.id, name:u.name, brand:'', plate:'', fuel:'бензин', norm:10, odo_value:null, odo_date:null, oil_interval:10000, oil_odo:null, oil_last_date:null, active:true, _new:true }; });
 }
 function showSetup(el){
   el.style.display = 'block';
@@ -2359,28 +2370,59 @@ async function odoReport(){
       }
     });
     devRows.sort((a,b) => Math.abs(b.dev) - Math.abs(a.dev));
-    const devBody = $('odDevBody'); devBody.innerHTML = '';
-    if(!devRows.length){
-      devBody.innerHTML = '<tr><td colspan="8" style="color:var(--mut)">Пока нет пар фактов для сравнения — вводи одометр при заправках, и здесь появятся сверки.</td></tr>';
-    }
-    devRows.forEach((r, idx) => {
-      const big = Math.abs(r.dev) > Math.max(30, r.gps * 0.05);
-      const mid = !big && Math.abs(r.dev) > Math.max(15, r.gps * 0.03);
-      const lc = big ? 'l-r' : (mid ? 'l-y' : 'l-g');
-      const tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td><span class="lamp '+lc+'"></span></td>' +
-        '<td><b>'+r.name+'</b></td>' +
-        '<td class="mono">'+r.from+' → '+r.to+'</td>' +
-        '<td class="mono">'+Math.round(r.gps).toLocaleString('ru')+' км</td>' +
-        '<td class="mono">'+Math.round(r.calc).toLocaleString('ru')+' км</td>' +
-        '<td class="mono">'+Math.round(r.fact).toLocaleString('ru')+' км <span style="color:var(--mut);font-size:11px">('+(r.endSrc||'')+')</span></td>' +
-        '<td class="mono'+(big?' bad':'')+'">'+(r.dev>0?'+':'')+Math.round(r.dev).toLocaleString('ru')+' км'+(r.pct!==null?' ('+(r.pct>0?'+':'')+r.pct.toFixed(1)+'%)':'')+'</td>' +
-        '<td><button class="dbtn odfix" data-idx="'+idx+'" style="padding:4px 10px;font-size:11px">✎ Исправить</button></td>';
-      devBody.appendChild(tr);
-    });
-    devBody.querySelectorAll('.odfix').forEach(btn => btn.onclick = async () => {
-      const r = devRows[+btn.dataset.idx];
+    devRowsCache = devRows;
+    const carNames = Array.from(new Set(devRows.map(r => r.name))).sort((a,b) => a.localeCompare(b, 'ru'));
+    const carSelPrev = $('odDevCar').value;
+    $('odDevCar').innerHTML = '<option value="">Все машины</option>' + carNames.map(n => '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>').join('');
+    if(carNames.includes(carSelPrev)) $('odDevCar').value = carSelPrev;
+    renderDevTable();
+
+    $('odSetup').style.display = 'none'; $('odEmpty').style.display = 'none';
+    $('odWrap').style.display = 'block';
+    $('odProg').textContent = '';
+  } catch(e){ $('odProg').textContent = '⚠ ' + e.message; }
+}
+$('odRun').onclick = odoReport;
+$('odCollect').onclick = () => collectKm($('odProg'), 62).then(odoReport).catch(e => $('odProg').textContent = '⚠ '+e.message);
+
+let odCache = [];
+let devRowsCache = [];
+
+function renderDevTable(){
+  const search = ($('odDevSearch').value || '').trim().toLowerCase();
+  const carSel = $('odDevCar').value;
+  const from = $('odDevFrom').value;
+  const to = $('odDevTo').value;
+  const rows = devRowsCache.filter(r => {
+    if(carSel && r.name !== carSel) return false;
+    if(search && !r.name.toLowerCase().includes(search)) return false;
+    if(from && r.to < from) return false;
+    if(to && r.to > to) return false;
+    return true;
+  });
+  const devBody = $('odDevBody'); devBody.innerHTML = '';
+  $('odDevCount').textContent = devRowsCache.length ? (rows.length + ' из ' + devRowsCache.length) : '';
+  if(!rows.length){
+    devBody.innerHTML = '<tr><td colspan="8" style="color:var(--mut)">' +
+      (devRowsCache.length ? 'Ничего не найдено по текущим фильтрам.' : 'Пока нет пар фактов для сравнения — вводи одометр при заправках, и здесь появятся сверки.') +
+      '</td></tr>';
+    return;
+  }
+  rows.forEach(r => {
+    const big = Math.abs(r.dev) > Math.max(30, r.gps * 0.05);
+    const mid = !big && Math.abs(r.dev) > Math.max(15, r.gps * 0.03);
+    const lc = big ? 'l-r' : (mid ? 'l-y' : 'l-g');
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><span class="lamp '+lc+'"></span></td>' +
+      '<td><b>'+r.name+'</b></td>' +
+      '<td class="mono">'+r.from+' → '+r.to+'</td>' +
+      '<td class="mono">'+Math.round(r.gps).toLocaleString('ru')+' км</td>' +
+      '<td class="mono">'+Math.round(r.calc).toLocaleString('ru')+' км</td>' +
+      '<td class="mono">'+Math.round(r.fact).toLocaleString('ru')+' км <span style="color:var(--mut);font-size:11px">('+(r.endSrc||'')+')</span></td>' +
+      '<td class="mono'+(big?' bad':'')+'">'+(r.dev>0?'+':'')+Math.round(r.dev).toLocaleString('ru')+' км'+(r.pct!==null?' ('+(r.pct>0?'+':'')+r.pct.toFixed(1)+'%)':'')+'</td>' +
+      '<td><button class="dbtn odfix" style="padding:4px 10px;font-size:11px">✎ Исправить</button></td>';
+    tr.querySelector('.odfix').onclick = async () => {
       const ans = prompt('Исправление показания одометра для ' + r.name + ' на дату ' + r.to + ' (источник: ' + (r.endSrc||'?') + ').\nСейчас введено: ' + Math.round(r.fact).toLocaleString('ru') + ' км. Расчётное по GPS: ' + r.calcRound.toLocaleString('ru') + ' км.\nВведи правильное показание:', r.calcRound);
       if(ans === null) return;
       const val = +String(ans).replace(/\s/g,'');
@@ -2394,17 +2436,18 @@ async function odoReport(){
         }
         odoReport();
       } catch(e){ alert(e.message); }
-    });
-
-    $('odSetup').style.display = 'none'; $('odEmpty').style.display = 'none';
-    $('odWrap').style.display = 'block';
-    $('odProg').textContent = '';
-  } catch(e){ $('odProg').textContent = '⚠ ' + e.message; }
+    };
+    devBody.appendChild(tr);
+  });
 }
-$('odRun').onclick = odoReport;
-$('odCollect').onclick = () => collectKm($('odProg'), 62).then(odoReport).catch(e => $('odProg').textContent = '⚠ '+e.message);
-
-let odCache = [];
+$('odDevSearch').oninput = renderDevTable;
+$('odDevCar').onchange = renderDevTable;
+$('odDevFrom').onchange = renderDevTable;
+$('odDevTo').onchange = renderDevTable;
+$('odDevReset').onclick = () => {
+  $('odDevSearch').value = ''; $('odDevCar').value = ''; $('odDevFrom').value = ''; $('odDevTo').value = '';
+  renderDevTable();
+};
 async function fixOdo(id, val, date){
   const c = cars[id];
   await db('POST', 'cars?on_conflict=unit_id', [{ unit_id:id, name:c.name, is_manual:c.is_manual||false,
@@ -2479,9 +2522,11 @@ $('fmSave').onclick = async () => {
 /* ---- модалка машин ---- */
 const FUELS = ['бензин','газ','дизель','электро'];
 function renderCm(){
-  $('cmBody').innerHTML = garageUnits().map(g => {
+  $('cmBody').innerHTML = garageUnits(true).map(g => {
     const c = cars[g.id];
-    return '<tr data-uid="'+g.id+'" data-manual="'+(g.manual?1:0)+'">' +
+    const isActive = !(c && c.active === false);
+    return '<tr data-uid="'+g.id+'" data-manual="'+(g.manual?1:0)+'"'+(isActive?'':' style="opacity:.5"')+'>' +
+      '<td style="text-align:center"><input class="c-active" type="checkbox" title="Активна (показывать в отчётах и на карте)"'+(isActive?' checked':'')+' style="width:17px;height:17px;accent-color:var(--go);cursor:pointer"></td>' +
       '<td style="font-size:12px;white-space:nowrap">' +
         (g.manual ? '<input class="c-name" value="'+(c.name||'')+'" placeholder="название" style="min-width:110px">' : '<b>'+g.name+'</b>') +
         (g.manual ? '<div style="color:var(--stop);font-size:10px">без GPS</div>' : '') + '</td>' +
@@ -2497,6 +2542,9 @@ function renderCm(){
       '<td>'+(g.manual ? '<button class="del-x c-del" title="Удалить машину">✕</button>' : '')+'</td>' +
       '</tr>';
   }).join('');
+  $('cmBody').querySelectorAll('.c-active').forEach(cb => cb.onchange = () => {
+    cb.closest('tr').style.opacity = cb.checked ? '' : '.5';
+  });
   $('cmBody').querySelectorAll('.c-del').forEach(b => b.onclick = async () => {
     const tr = b.closest('tr'), id = +tr.dataset.uid;
     const nm = cars[id] && cars[id].name ? cars[id].name : 'машину';
@@ -2519,7 +2567,7 @@ $('fCarsBtn').onclick = async () => {
 };
 $('cmAdd').onclick = () => {
   const id = -Date.now();
-  cars[id] = { unit_id:id, name:'', brand:'', plate:'', fuel:'бензин', norm:10, odo_value:null, odo_date:null, oil_interval:10000, oil_odo:null, oil_last_date:null, is_manual:true, _new:true };
+  cars[id] = { unit_id:id, name:'', brand:'', plate:'', fuel:'бензин', norm:10, odo_value:null, odo_date:null, oil_interval:10000, oil_odo:null, oil_last_date:null, is_manual:true, active:true, _new:true };
   renderCm();
   const inp = $('cmBody').querySelector('tr[data-uid="'+id+'"] .c-name');
   if(inp) inp.focus();
@@ -2539,6 +2587,7 @@ $('cmSave').onclick = async () => {
       unit_id:id,
       name: manual ? (tr.querySelector('.c-name').value.trim() || 'Без имени') : (u ? u.name : ''),
       is_manual: manual,
+      active: tr.querySelector('.c-active').checked,
       brand:tr.querySelector('.c-brand').value.trim(),
       plate:tr.querySelector('.c-plate').value.trim(),
       fuel:tr.querySelector('.c-fuel').value,
