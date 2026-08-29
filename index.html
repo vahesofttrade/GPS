@@ -570,22 +570,25 @@
     <div class="gbody">
       <div class="setup" id="odSetup" style="display:none"></div>
       <div id="odWrap" style="display:none">
-        <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;padding:16px 16px 8px">Расчётный одометр сейчас</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:16px 16px 8px">
+          <input type="text" id="odFltSearch" placeholder="Поиск по машине…" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:7px 10px;font-size:12px">
+          <select id="odFltCar" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:7px 10px;font-size:12px;min-width:160px"><option value="">Все машины</option></select>
+          <input type="date" id="odFltFrom" title="Период от (только для таблицы отклонений)" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font-size:12px;color-scheme:light">
+          <span style="color:var(--mut);font-size:12px">—</span>
+          <input type="date" id="odFltTo" title="Период до (только для таблицы отклонений)" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font-size:12px;color-scheme:light">
+          <button class="dbtn" id="odFltReset" style="padding:6px 12px;font-size:12px">✕ Сбросить</button>
+        </div>
+        <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;padding:8px 16px 8px;display:flex;justify-content:space-between;align-items:center">
+          <span>Расчётный одометр сейчас</span><span id="odFltCount1" style="text-transform:none;letter-spacing:0"></span>
+        </div>
         <table class="rep">
           <thead><tr>
             <th>Машина</th><th>Последний факт (введено)</th><th>Дата факта</th><th>+ GPS с той даты</th><th>Расчётный одометр</th><th>Обновить показание (с приборки)</th>
           </tr></thead>
           <tbody id="odBody"></tbody>
         </table>
-        <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;padding:24px 16px 8px">Отклонения: факт против расчёта (по каждому вводу одометра)</div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 16px 12px">
-          <input type="text" id="odDevSearch" placeholder="Поиск по машине…" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:7px 10px;font-size:12px">
-          <select id="odDevCar" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:7px 10px;font-size:12px;min-width:160px"><option value="">Все машины</option></select>
-          <input type="date" id="odDevFrom" title="Период от" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font-size:12px;color-scheme:light">
-          <span style="color:var(--mut);font-size:12px">—</span>
-          <input type="date" id="odDevTo" title="Период до" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font-size:12px;color-scheme:light">
-          <button class="dbtn" id="odDevReset" style="padding:6px 12px;font-size:12px">✕ Сбросить</button>
-          <span id="odDevCount" style="color:var(--mut);font-size:12px;margin-left:auto;white-space:nowrap"></span>
+        <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;padding:24px 16px 8px;display:flex;justify-content:space-between;align-items:center">
+          <span>Отклонения: факт против расчёта (по каждому вводу одометра)</span><span id="odFltCount2" style="text-transform:none;letter-spacing:0"></span>
         </div>
         <table class="rep">
           <thead><tr>
@@ -2295,7 +2298,7 @@ async function odoReport(){
     // таблица 1: расчётный одометр сейчас
     const yesterday = addDays(todayLocal(), -1);
     odCache = [];
-    const body = $('odBody'); body.innerHTML = '';
+    mainRowsCache = [];
     garageUnits().forEach(g => {
       const facts = odoFacts(g.id, odoAll);
       const lf = facts.length ? facts[facts.length-1] : null;
@@ -2305,55 +2308,10 @@ async function odoReport(){
       const canFix = !g.manual && lf && lf.d < yesterday;
       const calcY = canFix ? Math.round(lf.o + gpsBetween(g.id, lf.d, yesterday)) : null;
       odCache.push({ id:g.id, name:g.name, canFix, calcY, yesterday });
-      const tr = document.createElement('tr');
-      tr.dataset.uid = g.id;
-      tr.dataset.calc = calc !== null ? Math.round(calc) : '';
-      tr.innerHTML =
-        '<td><b class="carlink" onclick="openCarCard('+g.id+')">'+g.name+'</b>'+(g.manual?' <span class="vio warn" style="margin-left:4px">без GPS</span>':'')+'</td>' +
-        '<td class="mono">'+(lf ? Math.round(lf.o).toLocaleString('ru')+' км <span style="color:var(--mut)">('+lf.src+')</span>' : 'не вводился')+'</td>' +
-        '<td class="mono">'+(lf ? lf.d : '—')+'</td>' +
-        '<td class="mono">'+(gps !== null ? '+'+Math.round(gps).toLocaleString('ru')+' км' : '—')+'</td>' +
-        '<td class="mono"><b>'+(calc !== null ? Math.round(calc).toLocaleString('ru')+' км' : '—')+'</b></td>' +
-        '<td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
-          '<input type="number" class="od-new" placeholder="'+(calc !== null ? '~'+Math.round(calc) : 'км')+'" style="width:110px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font-family:var(--mono);font-size:12px">' +
-          '<input type="date" class="od-date" value="'+todayLocal()+'" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:5px 6px;font-size:12px;color-scheme:light">' +
-          '<button class="dbtn od-save" style="padding:6px 12px;font-size:12px">✓ Записать</button>' +
-          (canFix ? '<button class="dbtn od-gps" style="padding:6px 12px;font-size:12px" title="Записать расчётное значение как новое показание">↻ из GPS</button>' : '') +
-        '</div></td>';
-      body.appendChild(tr);
+      mainRowsCache.push({ id:g.id, name:g.name, manual:g.manual, lf, gps, calc, canFix, calcY, yesterday });
     });
-    body.querySelectorAll('.od-gps').forEach(b => b.onclick = async () => {
-      const tr = b.closest('tr');
-      const id = +tr.dataset.uid;
-      const item = odCache.find(x => x.id === id);
-      if(!item || !item.canFix) return;
-      if(!confirm(item.name + ': записать показание ' + item.calcY.toLocaleString('ru') + ' км на ' + item.yesterday + '?\n(Сегодняшний пробег продолжит добавляться по GPS)')) return;
-      b.disabled = true; b.textContent = '…';
-      try { await fixOdo(id, item.calcY, item.yesterday); odoReport(); }
-      catch(e){ alert(e.message); b.disabled = false; b.textContent = '↻ из GPS'; }
-    });
-    body.querySelectorAll('.od-save').forEach(b => b.onclick = async () => {
-      const tr = b.closest('tr');
-      const id = +tr.dataset.uid;
-      const valStr = tr.querySelector('.od-new').value;
-      const dt = tr.querySelector('.od-date').value || todayLocal();
-      if(valStr === ''){ alert('Введи показание одометра'); return; }
-      const val = +valStr;
-      if(dt > todayLocal()){ alert('Дата ' + dt + ' ещё не наступила — проверь дату (формат в календаре может быть месяц/день)'); return; }
-      const calc = tr.dataset.calc === '' ? null : +tr.dataset.calc;
-      if(calc !== null && Math.abs(val - calc) > Math.max(300, calc * 0.05)){
-        if(!confirm('Введено ' + val.toLocaleString('ru') + ' км, а расчётный — ' + calc.toLocaleString('ru') + ' км.\nРасхождение ' + Math.round(val - calc).toLocaleString('ru') + ' км. Точно записать?')) return;
-      }
-      const c = cars[id];
-      b.disabled = true; b.textContent = '…';
-      try {
-        await db('POST', 'cars?on_conflict=unit_id', [{ unit_id:id, name:c.name, is_manual:c.is_manual||false,
-          brand:c.brand, plate:c.plate, fuel:c.fuel, norm:c.norm,
-          odo_value:val, odo_date:dt,
-          oil_interval:c.oil_interval, oil_odo:c.oil_odo, oil_last_date:c.oil_last_date }], 'resolution=merge-duplicates');
-        odoReport();
-      } catch(e){ alert(e.message); b.disabled = false; b.textContent = '✓ Записать'; }
-    });
+    updateOdoCarOptions();
+    renderOdoNowTable();
 
     // таблица 2: отклонения факт vs расчёт
     const devRows = [];
@@ -2371,10 +2329,6 @@ async function odoReport(){
     });
     devRows.sort((a,b) => Math.abs(b.dev) - Math.abs(a.dev));
     devRowsCache = devRows;
-    const carNames = Array.from(new Set(devRows.map(r => r.name))).sort((a,b) => a.localeCompare(b, 'ru'));
-    const carSelPrev = $('odDevCar').value;
-    $('odDevCar').innerHTML = '<option value="">Все машины</option>' + carNames.map(n => '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>').join('');
-    if(carNames.includes(carSelPrev)) $('odDevCar').value = carSelPrev;
     renderDevTable();
 
     $('odSetup').style.display = 'none'; $('odEmpty').style.display = 'none';
@@ -2386,13 +2340,88 @@ $('odRun').onclick = odoReport;
 $('odCollect').onclick = () => collectKm($('odProg'), 62).then(odoReport).catch(e => $('odProg').textContent = '⚠ '+e.message);
 
 let odCache = [];
+let mainRowsCache = [];
 let devRowsCache = [];
 
+function currentOdoFilters(){
+  return {
+    search: ($('odFltSearch').value || '').trim().toLowerCase(),
+    carSel: $('odFltCar').value,
+    from: $('odFltFrom').value,
+    to: $('odFltTo').value
+  };
+}
+
+function updateOdoCarOptions(){
+  const names = Array.from(new Set(mainRowsCache.map(r => r.name))).sort((a,b) => a.localeCompare(b, 'ru'));
+  const prev = $('odFltCar').value;
+  $('odFltCar').innerHTML = '<option value="">Все машины</option>' + names.map(n => '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>').join('');
+  if(names.includes(prev)) $('odFltCar').value = prev;
+}
+
+function renderOdoNowTable(){
+  const { search, carSel } = currentOdoFilters();
+  const rows = mainRowsCache.filter(r => {
+    if(carSel && r.name !== carSel) return false;
+    if(search && !r.name.toLowerCase().includes(search)) return false;
+    return true;
+  });
+  const body = $('odBody'); body.innerHTML = '';
+  $('odFltCount1').textContent = mainRowsCache.length ? (rows.length + ' из ' + mainRowsCache.length) : '';
+  if(!rows.length){
+    body.innerHTML = '<tr><td colspan="6" style="color:var(--mut)">Ничего не найдено по текущим фильтрам.</td></tr>';
+    return;
+  }
+  rows.forEach(r => {
+    const { lf, gps, calc, canFix } = r;
+    const tr = document.createElement('tr');
+    tr.dataset.calc = calc !== null ? Math.round(calc) : '';
+    tr.innerHTML =
+      '<td><b class="carlink" onclick="openCarCard('+r.id+')">'+r.name+'</b>'+(r.manual?' <span class="vio warn" style="margin-left:4px">без GPS</span>':'')+'</td>' +
+      '<td class="mono">'+(lf ? Math.round(lf.o).toLocaleString('ru')+' км <span style="color:var(--mut)">('+lf.src+')</span>' : 'не вводился')+'</td>' +
+      '<td class="mono">'+(lf ? lf.d : '—')+'</td>' +
+      '<td class="mono">'+(gps !== null ? '+'+Math.round(gps).toLocaleString('ru')+' км' : '—')+'</td>' +
+      '<td class="mono"><b>'+(calc !== null ? Math.round(calc).toLocaleString('ru')+' км' : '—')+'</b></td>' +
+      '<td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+        '<input type="number" class="od-new" placeholder="'+(calc !== null ? '~'+Math.round(calc) : 'км')+'" style="width:110px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:6px 8px;font-family:var(--mono);font-size:12px">' +
+        '<input type="date" class="od-date" value="'+todayLocal()+'" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:5px 6px;font-size:12px;color-scheme:light">' +
+        '<button class="dbtn od-save" style="padding:6px 12px;font-size:12px">✓ Записать</button>' +
+        (canFix ? '<button class="dbtn od-gps" style="padding:6px 12px;font-size:12px" title="Записать расчётное значение как новое показание">↻ из GPS</button>' : '') +
+      '</div></td>';
+    const gpsBtn = tr.querySelector('.od-gps');
+    if(gpsBtn) gpsBtn.onclick = async () => {
+      if(!confirm(r.name + ': записать показание ' + r.calcY.toLocaleString('ru') + ' км на ' + r.yesterday + '?\n(Сегодняшний пробег продолжит добавляться по GPS)')) return;
+      gpsBtn.disabled = true; gpsBtn.textContent = '…';
+      try { await fixOdo(r.id, r.calcY, r.yesterday); odoReport(); }
+      catch(e){ alert(e.message); gpsBtn.disabled = false; gpsBtn.textContent = '↻ из GPS'; }
+    };
+    tr.querySelector('.od-save').onclick = async () => {
+      const btn = tr.querySelector('.od-save');
+      const valStr = tr.querySelector('.od-new').value;
+      const dt = tr.querySelector('.od-date').value || todayLocal();
+      if(valStr === ''){ alert('Введи показание одометра'); return; }
+      const val = +valStr;
+      if(dt > todayLocal()){ alert('Дата ' + dt + ' ещё не наступила — проверь дату (формат в календаре может быть месяц/день)'); return; }
+      const calcVal = tr.dataset.calc === '' ? null : +tr.dataset.calc;
+      if(calcVal !== null && Math.abs(val - calcVal) > Math.max(300, calcVal * 0.05)){
+        if(!confirm('Введено ' + val.toLocaleString('ru') + ' км, а расчётный — ' + calcVal.toLocaleString('ru') + ' км.\nРасхождение ' + Math.round(val - calcVal).toLocaleString('ru') + ' км. Точно записать?')) return;
+      }
+      const c = cars[r.id];
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        await db('POST', 'cars?on_conflict=unit_id', [{ unit_id:r.id, name:c.name, is_manual:c.is_manual||false,
+          brand:c.brand, plate:c.plate, fuel:c.fuel, norm:c.norm,
+          odo_value:val, odo_date:dt,
+          oil_interval:c.oil_interval, oil_odo:c.oil_odo, oil_last_date:c.oil_last_date }], 'resolution=merge-duplicates');
+        odoReport();
+      } catch(e){ alert(e.message); btn.disabled = false; btn.textContent = '✓ Записать'; }
+    };
+    body.appendChild(tr);
+  });
+}
+
 function renderDevTable(){
-  const search = ($('odDevSearch').value || '').trim().toLowerCase();
-  const carSel = $('odDevCar').value;
-  const from = $('odDevFrom').value;
-  const to = $('odDevTo').value;
+  const { search, carSel, from, to } = currentOdoFilters();
   const rows = devRowsCache.filter(r => {
     if(carSel && r.name !== carSel) return false;
     if(search && !r.name.toLowerCase().includes(search)) return false;
@@ -2401,7 +2430,7 @@ function renderDevTable(){
     return true;
   });
   const devBody = $('odDevBody'); devBody.innerHTML = '';
-  $('odDevCount').textContent = devRowsCache.length ? (rows.length + ' из ' + devRowsCache.length) : '';
+  $('odFltCount2').textContent = devRowsCache.length ? (rows.length + ' из ' + devRowsCache.length) : '';
   if(!rows.length){
     devBody.innerHTML = '<tr><td colspan="8" style="color:var(--mut)">' +
       (devRowsCache.length ? 'Ничего не найдено по текущим фильтрам.' : 'Пока нет пар фактов для сравнения — вводи одометр при заправках, и здесь появятся сверки.') +
@@ -2440,13 +2469,14 @@ function renderDevTable(){
     devBody.appendChild(tr);
   });
 }
-$('odDevSearch').oninput = renderDevTable;
-$('odDevCar').onchange = renderDevTable;
-$('odDevFrom').onchange = renderDevTable;
-$('odDevTo').onchange = renderDevTable;
-$('odDevReset').onclick = () => {
-  $('odDevSearch').value = ''; $('odDevCar').value = ''; $('odDevFrom').value = ''; $('odDevTo').value = '';
-  renderDevTable();
+function renderOdoFiltered(){ renderOdoNowTable(); renderDevTable(); }
+$('odFltSearch').oninput = renderOdoFiltered;
+$('odFltCar').onchange = renderOdoFiltered;
+$('odFltFrom').onchange = renderOdoFiltered;
+$('odFltTo').onchange = renderOdoFiltered;
+$('odFltReset').onclick = () => {
+  $('odFltSearch').value = ''; $('odFltCar').value = ''; $('odFltFrom').value = ''; $('odFltTo').value = '';
+  renderOdoFiltered();
 };
 async function fixOdo(id, val, date){
   const c = cars[id];
