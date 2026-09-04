@@ -486,6 +486,18 @@
   <div class="gview" id="fuelView">
     <div class="gbar">
       <input type="date" id="fFrom"> — <input type="date" id="fTo">
+      <select id="fFilterClass" style="margin-left:6px">
+        <option value="">Все машины</option>
+        <option value="легковой">Легковые</option>
+        <option value="грузовой">Грузовые</option>
+      </select>
+      <select id="fFilterFuel">
+        <option value="">Любое топливо</option>
+        <option value="бензин">Бензин</option>
+        <option value="дизель">Дизель</option>
+        <option value="газ">Газ</option>
+        <option value="электро">Электро</option>
+      </select>
       <button class="dbtn prime" id="fRun">Отчёт</button>
       <button class="dbtn" id="fAddBtn">⛽ Заправка</button>
       <button class="dbtn" id="fCarsBtn">🚗 Машины</button>
@@ -525,6 +537,7 @@
         <div class="fm-row"><label>Название бака</label><input id="tkName" placeholder="Дизельный бак"></div>
         <div class="fm-row"><label>Объём бака, л</label><input type="number" id="tkCapacity" min="1"></div>
         <div class="fm-row"><label>Текущий остаток, л (по факту сейчас)</label><input type="number" id="tkInitial" value="0" min="0"></div>
+        <div class="fm-row"><label>Текущее показание счётчика (если есть)</label><input type="number" id="tkInitCounter" value="0" min="0"></div>
         <button class="btn" id="tkCreateBtn">Создать бак</button>
       </div>
 
@@ -537,17 +550,24 @@
           <div style="height:14px;border-radius:7px;background:var(--panel2);margin-top:8px;overflow:hidden">
             <div id="tkBar" style="height:100%;background:var(--acc);width:0%;transition:width .3s"></div>
           </div>
-          <div style="font-size:12px;color:var(--mut);margin-top:4px" id="tkPct">0%</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mut);margin-top:4px">
+            <span id="tkPct">0%</span>
+            <span id="tkCounterLbl">Счётчик: —</span>
+          </div>
         </div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
           <button class="dbtn prime" id="tkAddDeliveryBtn">➕ Поставка</button>
           <button class="dbtn" id="tkAddIssueBtn">➖ Выдать в машину</button>
-          <button class="dbtn" id="tkAddCorrBtn">🛠 Корректировка</button>
+          <button class="dbtn" id="tkAddCorrBtn">🛠 Корректировка остатка</button>
+          <button class="dbtn" id="tkAddCounterCorrBtn">🔢 Корректировка счётчика</button>
         </div>
 
         <div id="tkDeliveryForm" style="display:none;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px">
-          <div class="fm-row"><label>Дата</label><input type="date" id="tkDDate"></div>
+          <div style="display:flex;gap:8px">
+            <div class="fm-row" style="flex:1"><label>Дата</label><input type="date" id="tkDDate"></div>
+            <div class="fm-row" style="flex:1"><label>Время</label><input type="time" id="tkDTime"></div>
+          </div>
           <div class="fm-row"><label>Объём, л</label><input type="number" id="tkDVolume" min="0"></div>
           <div class="fm-row"><label>Сумма</label><input type="number" id="tkDCost" min="0"></div>
           <div class="fm-row"><label>Примечание</label><input type="text" id="tkDNote" placeholder="поставщик и т.п."></div>
@@ -555,10 +575,14 @@
         </div>
 
         <div id="tkIssueForm" style="display:none;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px">
-          <div class="fm-row"><label>Дата</label><input type="date" id="tkIDate"></div>
+          <div style="display:flex;gap:8px">
+            <div class="fm-row" style="flex:1"><label>Дата</label><input type="date" id="tkIDate"></div>
+            <div class="fm-row" style="flex:1"><label>Время</label><input type="time" id="tkITime"></div>
+          </div>
           <div class="fm-row"><label>Машина</label><select id="tkICar"></select></div>
-          <div class="fm-row"><label>Объём, л</label><input type="number" id="tkIVolume" min="0"></div>
-          <div class="fm-row"><label>Одометр (необязательно)</label><input type="number" id="tkIOdo" min="0"></div>
+          <div class="fm-row"><label>Показание счётчика сейчас (если есть) — текущее: <span id="tkCounterNow" class="mono">—</span></label><input type="number" id="tkICounter" min="0" placeholder="оставь пустым, если считаешь вручную"></div>
+          <div class="fm-row"><label>Объём, л (заполни, если считаешь без счётчика)</label><input type="number" id="tkIVolume" min="0"></div>
+          <div class="fm-row"><label>Одометр машины (необязательно)</label><input type="number" id="tkIOdo" min="0"></div>
           <label style="font-size:12px;display:flex;align-items:center;gap:6px;margin:6px 0"><input type="checkbox" id="tkIAlsoFueling" checked> также записать как заправку этой машины (для отчёта по топливу)</label>
           <button class="btn" id="tkISave">Сохранить выдачу</button>
         </div>
@@ -570,9 +594,16 @@
           <button class="btn" id="tkCSave">Сохранить корректировку</button>
         </div>
 
+        <div id="tkCounterCorrForm" style="display:none;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px">
+          <div class="fm-row"><label>Дата</label><input type="date" id="tkKCDate"></div>
+          <div class="fm-row"><label>Новое показание счётчика — текущее: <span id="tkCounterNow2" class="mono">—</span></label><input type="number" id="tkKCValue" min="0"></div>
+          <div class="fm-row"><label>Причина</label><input type="text" id="tkKCNote" placeholder="сброс/замена счётчика и т.п."></div>
+          <button class="btn" id="tkKCSave">Сохранить корректировку счётчика</button>
+        </div>
+
         <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px">История</div>
         <table class="rep" id="tkLogTable">
-          <thead><tr><th>Дата</th><th>Тип</th><th>Изменение</th><th>Остаток</th><th>Комментарий</th><th></th></tr></thead>
+          <thead><tr><th>Дата / время</th><th>Тип</th><th>Изменение</th><th>Остаток</th><th>Комментарий</th><th></th></tr></thead>
           <tbody id="tkLogBody"></tbody>
         </table>
         <div id="tkLogEmpty" style="padding:16px 0;color:var(--mut);font-size:13px">Записей пока нет</div>
@@ -1043,7 +1074,7 @@
       <h2>🚗 Машины и нормы</h2>
       <div style="overflow:auto;max-height:60vh">
         <table class="cm-table">
-          <thead><tr><th>Объект Wialon</th><th>Марка</th><th>Госномер</th><th>Топливо</th><th>Норма л/100км</th><th>Одометр, км</th><th>на дату</th><th>Масло: интервал, км</th><th>Масло: на пробеге, км</th><th>Масло: дата</th><th></th></tr></thead>
+          <thead><tr><th>Объект Wialon</th><th>Марка</th><th>Госномер</th><th>Тип</th><th>Топливо</th><th>Норма л/100км</th><th>Одометр, км</th><th>на дату</th><th>Масло: интервал, км</th><th>Масло: на пробеге, км</th><th>Масло: дата</th><th></th></tr></thead>
           <tbody id="cmBody"></tbody>
         </table>
       </div>
@@ -2052,7 +2083,14 @@ async function fuelReport(){
     const body = $('fBody'); body.innerHTML = '';
     fuelSummaryRows = [];
     fuelPeriodStr = from + ' — ' + to;
-    garageUnits().forEach(g => {
+    const fClass = $('fFilterClass').value, fFuel = $('fFilterFuel').value;
+    const filteredUnits = garageUnits().filter(g => {
+      const c = cars[g.id] || {};
+      if(fClass && (c.vclass || 'легковой') !== fClass) return false;
+      if(fFuel && c.fuel !== fFuel) return false;
+      return true;
+    });
+    filteredUnits.forEach(g => {
       const c = cars[g.id] || { fuel:'', norm:0 };
       const km = kmBy[g.id]||0, lt = ltBy[g.id]||0;
       const normL = km * (c.norm||0) / 100;
@@ -2078,7 +2116,8 @@ async function fuelReport(){
     });
     // последние заправки
     const last = await db('GET', 'fuelings?select=*&order=fdate.desc,id.desc&limit=15');
-    $('fLast').innerHTML = last.map(r => {
+    const filteredIds = new Set(filteredUnits.map(g => g.id));
+    $('fLast').innerHTML = last.filter(r => filteredIds.has(r.unit_id)).map(r => {
       const g = garageUnits().find(x => x.id === r.unit_id);
       return '<tr><td class="mono">'+r.fdate+'</td><td>'+(g?g.name:r.unit_id)+'</td><td class="mono">'+r.liters+' л'+(r.full_tank?' <span title="бак полный">🔋</span>':'')+'</td>' +
         '<td class="mono">'+(r.odo?Math.round(r.odo).toLocaleString('ru')+' км':'')+'</td>' +
@@ -2528,6 +2567,7 @@ $('fmSave').onclick = async () => {
 
 /* ---- модалка машин ---- */
 const FUELS = ['бензин','газ','дизель','электро'];
+const VCLASSES = ['легковой','грузовой'];
 function renderCm(){
   $('cmBody').innerHTML = garageUnits().map(g => {
     const c = cars[g.id];
@@ -2537,6 +2577,7 @@ function renderCm(){
         (g.manual ? '<div style="color:var(--stop);font-size:10px">без GPS</div>' : '') + '</td>' +
       '<td><input class="c-brand" value="'+(c.brand||'')+'"></td>' +
       '<td><input class="c-plate" value="'+(c.plate||'')+'"></td>' +
+      '<td><select class="c-vclass">'+VCLASSES.map(v => '<option'+(c.vclass===v?' selected':'')+'>'+v+'</option>').join('')+'</select></td>' +
       '<td><select class="c-fuel">'+FUELS.map(f => '<option'+(c.fuel===f?' selected':'')+'>'+f+'</option>').join('')+'</select></td>' +
       '<td><input class="c-norm" type="number" step="0.1" value="'+(c.norm||10)+'" style="min-width:70px"></td>' +
       '<td><input class="c-odo" type="number" step="1" value="'+(c.odo_value ?? '')+'" placeholder="с приборки" style="min-width:90px"></td>' +
@@ -2591,6 +2632,7 @@ $('cmSave').onclick = async () => {
       is_manual: manual,
       brand:tr.querySelector('.c-brand').value.trim(),
       plate:tr.querySelector('.c-plate').value.trim(),
+      vclass:tr.querySelector('.c-vclass').value,
       fuel:tr.querySelector('.c-fuel').value,
       norm:+tr.querySelector('.c-norm').value || 0,
       odo_value: odoV === '' ? null : +odoV,
@@ -2608,6 +2650,8 @@ $('cmSave').onclick = async () => {
 };
 
 $('fRun').onclick = fuelReport;
+$('fFilterClass').onchange = fuelReport;
+$('fFilterFuel').onchange = fuelReport;
 $('fPdfBtn').onclick = async () => {
   if(!dbReady()){ fuelReport(); return; }
   const from = $('fFrom').value, to = $('fTo').value;
@@ -2615,7 +2659,15 @@ $('fPdfBtn').onclick = async () => {
   $('fProg').textContent = 'готовлю PDF…';
   try {
     await fuelReport(); // на случай если период меняли, но отчёт не пересчитан
-    const detail = await dbAll('fuelings?select=*&fdate=gte.' + from + '&fdate=lte.' + to + '&order=fdate.asc,id.asc');
+    const detailAll = await dbAll('fuelings?select=*&fdate=gte.' + from + '&fdate=lte.' + to + '&order=fdate.asc,id.asc');
+    const fClass = $('fFilterClass').value, fFuel = $('fFilterFuel').value;
+    const detail = detailAll.filter(r => {
+      if(!fClass && !fFuel) return true;
+      const c = cars[r.unit_id] || {};
+      if(fClass && (c.vclass || 'легковой') !== fClass) return false;
+      if(fFuel && c.fuel !== fFuel) return false;
+      return true;
+    });
     printFuelPdf(from, to, fuelSummaryRows, detail);
     $('fProg').textContent = '';
   } catch(e){ $('fProg').textContent = '⚠ ' + e.message; }
@@ -4431,15 +4483,15 @@ if('serviceWorker' in navigator){
 
 /* ================= ТОПЛИВНЫЙ БАК ================= */
 let tank = null, tankLog = [];
-const TANK_TYPE_LABEL = { delivery:'➕ Поставка', issue:'➖ Выдача', correction:'🛠 Корректировка' };
-const TANK_SQL = 'create table if not exists fuel_tanks (id bigint generated always as identity primary key, name text not null, capacity numeric not null);\n' +
+const TANK_TYPE_LABEL = { delivery:'➕ Поставка', issue:'➖ Выдача', correction:'🛠 Корректировка остатка', counter_correction:'🔢 Корректировка счётчика' };
+const TANK_SQL = 'create table if not exists fuel_tanks (id bigint generated always as identity primary key, name text not null, capacity numeric not null, counter numeric not null default 0);\n' +
   'alter table fuel_tanks enable row level security;\ncreate policy "allow all" on fuel_tanks for all using (true) with check (true);\n\n' +
-  'create table if not exists fuel_tank_log (id bigint generated always as identity primary key, tank_id bigint not null, date date not null, type text not null, volume numeric not null, cost numeric, unit_id bigint, note text);\n' +
+  'create table if not exists fuel_tank_log (id bigint generated always as identity primary key, tank_id bigint not null, date date not null, ftime text, type text not null, volume numeric not null, cost numeric, unit_id bigint, counter numeric, note text);\n' +
   'alter table fuel_tank_log enable row level security;\ncreate policy "allow all" on fuel_tank_log for all using (true) with check (true);';
 
 function tankBalance(){ return tankLog.reduce((s, r) => s + Number(r.volume), 0); }
 function hideAllTankForms(){
-  ['tkDeliveryForm','tkIssueForm','tkCorrForm'].forEach(id => $(id).style.display = 'none');
+  ['tkDeliveryForm','tkIssueForm','tkCorrForm','tkCounterCorrForm'].forEach(id => $(id).style.display = 'none');
 }
 async function loadTank(){
   try {
@@ -4461,7 +4513,7 @@ async function loadTank(){
     $('tankSetupForm').style.display = 'block';
     $('tankMain').style.display = 'none';
     $('tankSetupNote').style.display = 'block';
-    $('tankSetupNote').innerHTML = '⚠ Таблицы бака не подключены. Выполни в Supabase SQL Editor:<br><pre style="font-size:11px;white-space:pre-wrap">' + TANK_SQL + '</pre>';
+    $('tankSetupNote').innerHTML = '⚠ Таблицы бака не подключены (или нет колонок счётчика/времени). Выполни в Supabase SQL Editor:<br><pre style="font-size:11px;white-space:pre-wrap">' + TANK_SQL + '</pre>';
   }
 }
 function renderTank(){
@@ -4472,16 +4524,21 @@ function renderTank(){
   $('tkBar').style.width = pct + '%';
   $('tkBar').style.background = pct < 15 ? '#d64545' : (pct < 30 ? '#c98a02' : 'var(--acc)');
   $('tkPct').textContent = pct.toFixed(0) + '%' + (bal > tank.capacity ? ' ⚠ выше номинального объёма' : '');
+  const counterVal = tank.counter != null ? Number(tank.counter).toFixed(0) : '—';
+  $('tkCounterLbl').textContent = 'Счётчик: ' + counterVal;
+  $('tkCounterNow').textContent = counterVal;
+  $('tkCounterNow2').textContent = counterVal;
 
   let running = 0;
   const withRunning = tankLog.map(r => { running += Number(r.volume); return { ...r, running }; });
   withRunning.reverse();
   $('tkLogBody').innerHTML = withRunning.map(r => {
     const carLbl = r.unit_id != null ? (' · ' + ((cars[r.unit_id] && cars[r.unit_id].plate) || (garageUnits().find(g => g.id === r.unit_id) || {}).name || r.unit_id)) : '';
-    return '<tr><td class="mono">' + r.date + '</td><td>' + (TANK_TYPE_LABEL[r.type] || r.type) + '</td>' +
+    const counterLbl = r.counter != null ? (' · счётчик ' + Number(r.counter).toFixed(0)) : '';
+    return '<tr><td class="mono">' + r.date + (r.ftime ? ' ' + r.ftime : '') + '</td><td>' + (TANK_TYPE_LABEL[r.type] || r.type) + '</td>' +
       '<td class="mono">' + (r.volume > 0 ? '+' : '') + Number(r.volume).toFixed(0) + ' л' + '</td>' +
       '<td class="mono">' + r.running.toFixed(0) + ' л</td>' +
-      '<td>' + (r.note || '') + carLbl + (r.cost ? ' · ' + Number(r.cost).toLocaleString('ru') : '') + '</td>' +
+      '<td>' + (r.note || '') + carLbl + counterLbl + (r.cost ? ' · ' + Number(r.cost).toLocaleString('ru') : '') + '</td>' +
       '<td><button class="del-x" data-tid="' + r.id + '">🗑</button></td></tr>';
   }).join('');
   $('tkLogTable').style.display = withRunning.length ? 'table' : 'none';
@@ -4503,9 +4560,10 @@ $('tkCreateBtn').onclick = async () => {
   const name = $('tkName').value.trim() || 'Топливный бак';
   const capacity = +$('tkCapacity').value;
   const initial = +$('tkInitial').value || 0;
+  const initCounter = +$('tkInitCounter').value || 0;
   if(!capacity){ alert('Укажи объём бака'); return; }
   try {
-    const rows = await db('POST', 'fuel_tanks', [{ name, capacity }]);
+    const rows = await db('POST', 'fuel_tanks', [{ name, capacity, counter: initCounter }]);
     const newTank = Array.isArray(rows) ? rows[0] : rows;
     if(initial > 0){
       await db('POST', 'fuel_tank_log', [{ tank_id: newTank.id, date: todayLocal(), type:'correction', volume: initial, note:'начальный остаток' }]);
@@ -4513,35 +4571,48 @@ $('tkCreateBtn').onclick = async () => {
     await loadTank();
   } catch(e){ alert(e.message); }
 };
-$('tkAddDeliveryBtn').onclick = () => { hideAllTankForms(); $('tkDDate').value = todayLocal(); $('tkDVolume').value=''; $('tkDCost').value=''; $('tkDNote').value=''; $('tkDeliveryForm').style.display = 'block'; };
+function nowTime(){ const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
+$('tkAddDeliveryBtn').onclick = () => { hideAllTankForms(); $('tkDDate').value = todayLocal(); $('tkDTime').value = nowTime(); $('tkDVolume').value=''; $('tkDCost').value=''; $('tkDNote').value=''; $('tkDeliveryForm').style.display = 'block'; };
 $('tkAddIssueBtn').onclick = () => {
   hideAllTankForms();
-  $('tkIDate').value = todayLocal(); $('tkIVolume').value=''; $('tkIOdo').value=''; $('tkIAlsoFueling').checked = true;
+  $('tkIDate').value = todayLocal(); $('tkITime').value = nowTime(); $('tkIVolume').value=''; $('tkICounter').value=''; $('tkIOdo').value=''; $('tkIAlsoFueling').checked = true;
   $('tkICar').innerHTML = garageUnits().map(g => '<option value="'+g.id+'">'+((cars[g.id]||{}).plate || g.name)+'</option>').join('');
   $('tkIssueForm').style.display = 'block';
 };
 $('tkAddCorrBtn').onclick = () => { hideAllTankForms(); $('tkCDate').value = todayLocal(); $('tkCActual').value = tankBalance().toFixed(0); $('tkCNote').value=''; $('tkCorrForm').style.display = 'block'; };
+$('tkAddCounterCorrBtn').onclick = () => { hideAllTankForms(); $('tkKCDate').value = todayLocal(); $('tkKCValue').value = tank.counter != null ? Number(tank.counter).toFixed(0) : ''; $('tkKCNote').value=''; $('tkCounterCorrForm').style.display = 'block'; };
 
 $('tkDSave').onclick = async () => {
   const volume = +$('tkDVolume').value;
   const date = $('tkDDate').value;
   if(!volume || !date){ alert('Укажи дату и объём'); return; }
   try {
-    await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date, type:'delivery', volume, cost: +$('tkDCost').value || null, note: $('tkDNote').value.trim() }]);
+    await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date, ftime: $('tkDTime').value || null, type:'delivery', volume, cost: +$('tkDCost').value || null, note: $('tkDNote').value.trim() }]);
     hideAllTankForms();
     await loadTank();
   } catch(e){ alert(e.message); }
 };
 $('tkISave').onclick = async () => {
-  const volume = +$('tkIVolume').value;
   const date = $('tkIDate').value;
   const unitId = +$('tkICar').value;
-  if(!volume || !date || !unitId){ alert('Укажи дату, машину и объём'); return; }
+  const counterInput = $('tkICounter').value;
+  let volume = +$('tkIVolume').value || 0;
+  let newCounter = null;
+  if(counterInput !== ''){
+    newCounter = +counterInput;
+    const prevCounter = tank.counter != null ? Number(tank.counter) : 0;
+    if(newCounter < prevCounter){ alert('Новое показание счётчика меньше текущего (' + prevCounter.toFixed(0) + ') — проверь ввод'); return; }
+    volume = newCounter - prevCounter;
+  }
+  if(!volume || !date || !unitId){ alert('Укажи дату, машину и объём (или показание счётчика)'); return; }
   try {
-    await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date, type:'issue', volume: -volume, unit_id: unitId, note:'' }]);
+    await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date, ftime: $('tkITime').value || null, type:'issue', volume: -volume, unit_id: unitId, counter: newCounter, note:'' }]);
+    if(newCounter != null){
+      await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter: newCounter });
+    }
     if($('tkIAlsoFueling').checked){
       const odo = $('tkIOdo').value ? +$('tkIOdo').value : null;
-      await db('POST', 'fuelings', [{ unit_id: unitId, fdate: date, liters: volume, cost: 0, odo, full_tank:false, comment:'из бака «' + tank.name + '»' }]);
+      await db('POST', 'fuelings', [{ unit_id: unitId, fdate: date, liters: volume, cost: 0, odo, full_tank:false, comment:'из бака «' + tank.name + '»' + ($('tkITime').value ? ' в ' + $('tkITime').value : '') }]);
     }
     hideAllTankForms();
     await loadTank();
@@ -4554,6 +4625,17 @@ $('tkCSave').onclick = async () => {
   const delta = actual - tankBalance();
   try {
     await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date, type:'correction', volume: delta, note: $('tkCNote').value.trim() || 'корректировка по замеру' }]);
+    hideAllTankForms();
+    await loadTank();
+  } catch(e){ alert(e.message); }
+};
+$('tkKCSave').onclick = async () => {
+  const newCounter = +$('tkKCValue').value;
+  const date = $('tkKCDate').value;
+  if($('tkKCValue').value === '' || isNaN(newCounter) || !date){ alert('Укажи дату и новое показание'); return; }
+  try {
+    await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date, type:'counter_correction', volume: 0, counter: newCounter, note: $('tkKCNote').value.trim() || 'корректировка счётчика' }]);
+    await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter: newCounter });
     hideAllTankForms();
     await loadTank();
   } catch(e){ alert(e.message); }
