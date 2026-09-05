@@ -1062,6 +1062,7 @@
         <input type="checkbox" id="fmFull" style="width:18px;height:18px;accent-color:var(--go)">
         <label for="fmFull" style="margin:0;font-size:13px;color:var(--ink);text-transform:none;letter-spacing:0;cursor:pointer">🔋 Бак полный (заправлено до полного)</label>
       </div>
+      <div class="fm-row" id="fmTankRow" style="display:none;font-size:12.5px;color:var(--mut);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;line-height:1.4"></div>
       <div class="fm-row"><label>Сумма (не обязательно)</label><input type="number" id="fmCost" step="1" min="0"></div>
       <div class="fm-row"><label>Комментарий</label><input type="text" id="fmComment" placeholder="АЗС, чек…"></div>
       <button class="btn" id="fmSave">Сохранить</button>
@@ -2535,6 +2536,18 @@ $('odFixAll').onclick = async () => {
 };
 
 /* ---- модалка заправки ---- */
+function updateFmTankHint(){
+  const carId = +$('fmCar').value;
+  const c = cars[carId] || {};
+  const cost = +$('fmCost').value || 0;
+  if(!tank || c.fuel !== 'дизель'){ $('fmTankRow').style.display = 'none'; return; }
+  $('fmTankRow').style.display = 'block';
+  if(cost > 0){
+    $('fmTankRow').textContent = '💳 Указана сумма — считаем, что заправка на стороне (не из своего бака «' + tank.name + '»). Остаток бака не изменится.';
+  } else {
+    $('fmTankRow').textContent = '🛢 Без суммы — спишется из своего бака «' + tank.name + '» (сейчас: ' + tankBalance().toFixed(0) + ' л). Укажи сумму, если заправлялись не из своего бака.';
+  }
+}
 $('fAddBtn').onclick = async () => {
   if(!dbReady()){ fuelReport(); return; }
   await loadCars();
@@ -2542,8 +2555,12 @@ $('fAddBtn').onclick = async () => {
   $('fmCar').innerHTML = garageUnits().map(g => '<option value="'+g.id+'">'+g.name+(cars[g.id]&&cars[g.id].plate?' · '+cars[g.id].plate:'')+(g.manual?' (без GPS)':'')+'</option>').join('');
   $('fmDate').value = todayLocal();
   $('fmLiters').value = ''; $('fmCost').value = ''; $('fmComment').value = ''; $('fmOdo').value = ''; $('fmFull').checked = false;
+  try { await loadTank(); } catch(e){}
+  updateFmTankHint();
   $('fmOverlay').style.display = 'flex';
 };
+$('fmCar').onchange = updateFmTankHint;
+$('fmCost').oninput = updateFmTankHint;
 $('fmOverlay').onclick = e => { if(e.target === $('fmOverlay')) $('fmOverlay').style.display = 'none'; };
 $('fmSave').onclick = async () => {
   const liters = +$('fmLiters').value;
@@ -2552,12 +2569,17 @@ $('fmSave').onclick = async () => {
   const isManual = cars[carId] && cars[carId].is_manual;
   const odo = $('fmOdo').value === '' ? null : +$('fmOdo').value;
   if(isManual && odo === null && !confirm('Для машины без GPS одометр — единственный источник пробега. Сохранить без него?')) return;
+  const cost = +$('fmCost').value || 0;
   try {
-    const row = { unit_id: carId, fdate:$('fmDate').value, liters, cost:+$('fmCost').value||0, comment:$('fmComment').value.trim(), odo, full_tank:$('fmFull').checked };
+    const row = { unit_id: carId, fdate:$('fmDate').value, liters, cost, comment:$('fmComment').value.trim(), odo, full_tank:$('fmFull').checked };
     if(fmEditId != null){
       await db('PATCH', 'fuelings?id=eq.' + fmEditId, row);
     } else {
       await db('POST', 'fuelings', [row]);
+      const c = cars[carId] || {};
+      if(tank && c.fuel === 'дизель' && cost === 0){
+        await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date: $('fmDate').value, type:'issue', volume: -liters, unit_id: carId, note: 'авто-списание: дизель без суммы (через ⛽ Заправка)' }]);
+      }
     }
     $('fmOverlay').style.display = 'none';
     if($('exOverlay').style.display === 'flex' && exCarId != null) openExpenseBreakdownById(exCarId);
@@ -2753,6 +2775,13 @@ async function initDriverPage(){
   $('drvCar').textContent = carTitle;
   $('drvCarR').textContent = carTitle;
 
+  // топливный бак (для авто-списания дизеля без суммы)
+  let drvTank = null;
+  try {
+    const tanks = await db('GET', 'fuel_tanks?select=*&order=id.asc&limit=1');
+    if(tanks[0]) drvTank = tanks[0];
+  } catch(e){}
+
   // справочник водителей + текущее назначение на эту машину (для выбора отправителя)
   let drvList = [], drvCurrentId = null;
   try {
@@ -2826,8 +2855,12 @@ async function initDriverPage(){
     $('drvSave').disabled = true; $('drvSave').textContent = 'Сохраняю…';
     try {
       const odo = $('drvOdo').value === '' ? null : +$('drvOdo').value;
+      const cost = +$('drvCost').value || 0;
       await db('POST', 'fuelings', [{ unit_id:id, fdate:$('drvDate').value, liters,
-        odo, cost:+$('drvCost').value || 0, comment:'QR', full_tank:$('drvFull').checked }]);
+        odo, cost, comment:'QR', full_tank:$('drvFull').checked }]);
+      if(drvTank && carRow && carRow.fuel === 'дизель' && cost === 0){
+        try { await db('POST', 'fuel_tank_log', [{ tank_id: drvTank.id, date: $('drvDate').value, type:'issue', volume: -liters, unit_id: id, note:'авто-списание: дизель без суммы (QR водителя)' }]); } catch(e){}
+      }
       show('none');
       $('drvDone').style.display = 'block';
       $('drvDoneTitle').textContent = 'Заправка сохранена!';
