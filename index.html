@@ -2545,7 +2545,7 @@ function updateFmTankHint(){
   if(cost > 0){
     $('fmTankRow').textContent = '💳 Указана сумма — считаем, что заправка на стороне (не из своего бака «' + tank.name + '»). Остаток бака не изменится.';
   } else {
-    $('fmTankRow').textContent = '🛢 Без суммы — спишется из своего бака «' + tank.name + '» (сейчас: ' + tankBalance().toFixed(0) + ' л). Укажи сумму, если заправлялись не из своего бака.';
+    $('fmTankRow').textContent = '🛢 Без суммы — спишется из своего бака «' + tank.name + '» (сейчас: ' + tankBalance().toFixed(0) + ' л, счётчик: ' + (tank.counter != null ? Number(tank.counter).toFixed(0) : '0') + '). Укажи сумму, если заправлялись не из своего бака.';
   }
 }
 $('fAddBtn').onclick = async () => {
@@ -2578,7 +2578,10 @@ $('fmSave').onclick = async () => {
       await db('POST', 'fuelings', [row]);
       const c = cars[carId] || {};
       if(tank && c.fuel === 'дизель' && cost === 0){
-        await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date: $('fmDate').value, type:'issue', volume: -liters, unit_id: carId, note: 'авто-списание: дизель без суммы (через ⛽ Заправка)' }]);
+        const newCounter = (tank.counter != null ? Number(tank.counter) : 0) + liters;
+        await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date: $('fmDate').value, type:'issue', volume: -liters, unit_id: carId, counter: newCounter, note: 'авто-списание: дизель без суммы (через ⛽ Заправка)' }]);
+        await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter: newCounter });
+        tank.counter = newCounter;
       }
     }
     $('fmOverlay').style.display = 'none';
@@ -2859,7 +2862,12 @@ async function initDriverPage(){
       await db('POST', 'fuelings', [{ unit_id:id, fdate:$('drvDate').value, liters,
         odo, cost, comment:'QR', full_tank:$('drvFull').checked }]);
       if(drvTank && carRow && carRow.fuel === 'дизель' && cost === 0){
-        try { await db('POST', 'fuel_tank_log', [{ tank_id: drvTank.id, date: $('drvDate').value, type:'issue', volume: -liters, unit_id: id, note:'авто-списание: дизель без суммы (QR водителя)' }]); } catch(e){}
+        try {
+          const newCounter = (drvTank.counter != null ? Number(drvTank.counter) : 0) + liters;
+          await db('POST', 'fuel_tank_log', [{ tank_id: drvTank.id, date: $('drvDate').value, type:'issue', volume: -liters, unit_id: id, counter: newCounter, note:'авто-списание: дизель без суммы (QR водителя)' }]);
+          await db('PATCH', 'fuel_tanks?id=eq.' + drvTank.id, { counter: newCounter });
+          drvTank.counter = newCounter;
+        } catch(e){}
       }
       show('none');
       $('drvDone').style.display = 'block';
