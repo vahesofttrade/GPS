@@ -2173,7 +2173,8 @@ $('oilEditSave').onclick = async () => {
       oil_last_date: $('oilEditDate').value || null
     }], 'resolution=merge-duplicates');
     $('oilEditOverlay').style.display = 'none';
-    oilReport();
+    if($('oilView').style.display !== 'none') oilReport();
+    if($('ccOverlay').style.display === 'flex') openCarCard(oilEditId);
   } catch(e){ alert(e.message); }
 };
 async function oilReport(){
@@ -3817,7 +3818,7 @@ async function openCarCard(id){
     h += sec('Пробег', line('Расчётный одометр', odoNow != null ? '<b>' + Math.round(odoNow).toLocaleString('ru') + ' км</b>' : '—') +
       (lf ? line('Последний факт', Math.round(lf.o).toLocaleString('ru') + ' км · ' + lf.d + ' (' + lf.src + ')') : '') +
       line('Км за текущий месяц', kmM.toFixed(0)));
-    h += sec('🛢 Масло', line('До замены', oilLeft !== null ? (oilLeft <= 0 ? '<span style="color:#b02a1e">ПРОСРОЧЕНО ' + Math.abs(oilLeft).toLocaleString('ru') + ' км</span>' : oilLeft.toLocaleString('ru') + ' км') : 'не задано') +
+    h += sec('🛢 Масло <span class="carlink" style="font-size:11px;font-weight:normal;margin-left:6px" onclick="event.stopPropagation();openOilEdit(' + id + ')">✎ изменить</span>', line('До замены', oilLeft !== null ? (oilLeft <= 0 ? '<span style="color:#b02a1e">ПРОСРОЧЕНО ' + Math.abs(oilLeft).toLocaleString('ru') + ' км</span>' : oilLeft.toLocaleString('ru') + ' км') : 'не задано') +
       (c.oil_last_date ? line('Последняя замена', (c.oil_odo != null ? Math.round(+c.oil_odo).toLocaleString('ru') + ' км · ' : '') + c.oil_last_date) : ''));
     if(mnts.length) h += sec('🛠 Регламенты', mnts.map(m => { const r = mntLeft(m, odoNow); return line(m.title, r ? (r.left <= 0 ? '<span style="color:#b02a1e">' + r.txt + '</span>' : r.txt) : '—'); }).join(''));
     if(docL.length) h += sec('📄 Документы', docL.map(d => line(d.dtype, 'до ' + d.valid_to + (d.cost ? ' · ' + (+d.cost).toLocaleString('ru') : ''))).join(''));
