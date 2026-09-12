@@ -1024,6 +1024,18 @@
   </div>
 
   <!-- МОДАЛКА: РЕГЛАМЕНТ ТО -->
+  <!-- МОДАЛКА: РЕДАКТИРОВАТЬ ЗАМЕНУ МАСЛА -->
+  <div class="overlay" id="oilEditOverlay">
+    <div class="modal">
+      <button class="close" id="oilEditClose">✕</button>
+      <h2 id="oilEditTitle">✎ Замена масла</h2>
+      <div class="fm-row"><label>Одометр на момент замены, км</label><input type="number" id="oilEditOdo" min="0"></div>
+      <div class="fm-row"><label>Дата замены</label><input type="date" id="oilEditDate"></div>
+      <div class="fm-row"><label>Интервал замены, км</label><input type="number" id="oilEditInterval" min="1" step="500"></div>
+      <button class="btn" id="oilEditSave">Сохранить</button>
+    </div>
+  </div>
+
   <div class="overlay" id="mnOverlay">
     <div class="modal">
       <button class="close" id="mnClose">✕</button>
@@ -1073,6 +1085,7 @@
   <div class="overlay" id="cmOverlay">
     <div class="modal wide">
       <h2>🚗 Машины и нормы</h2>
+      <label style="font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px;margin:6px 0 10px"><input type="checkbox" id="cmShowHidden"> показать скрытые машины</label>
       <div style="overflow:auto;max-height:60vh">
         <table class="cm-table">
           <thead><tr><th>Объект Wialon</th><th>Марка</th><th>Госномер</th><th>Тип</th><th>Топливо</th><th>Норма л/100км</th><th>Одометр, км</th><th>на дату</th><th>Масло: интервал, км</th><th>Масло: на пробеге, км</th><th>Масло: дата</th><th></th></tr></thead>
@@ -1954,10 +1967,10 @@ async function dbAll(path){
 }
 
 let cars = {};   // unit_id -> запись
-function garageUnits(){
-  const list = units.map(u => ({ id:u.id, name:u.name, manual:false }));
-  Object.values(cars).forEach(c => { if(c.is_manual) list.push({ id:c.unit_id, name:c.name || 'Без имени', manual:true }); });
-  return list;
+function garageUnits(includeHidden){
+  const list = units.map(u => ({ id:u.id, name:u.name, manual:false, hidden: !!(cars[u.id] && cars[u.id].hidden) }));
+  Object.values(cars).forEach(c => { if(c.is_manual) list.push({ id:c.unit_id, name:c.name || 'Без имени', manual:true, hidden: !!c.hidden }); });
+  return includeHidden ? list : list.filter(g => !g.hidden);
 }
 async function loadCars(){
   const rows = await db('GET', 'cars?select=*');
@@ -2136,6 +2149,33 @@ async function fuelReport(){
 }
 
 /* ---- отчёт по маслу ---- */
+let oilEditId = null;
+function openOilEdit(id){
+  const c = cars[id]; if(!c) return;
+  oilEditId = id;
+  const g = garageUnits(true).find(x => x.id === id);
+  $('oilEditTitle').textContent = '✎ Замена масла · ' + ((c.plate) || (g ? g.name : id));
+  $('oilEditOdo').value = c.oil_odo ?? '';
+  $('oilEditDate').value = c.oil_last_date || '';
+  $('oilEditInterval').value = c.oil_interval || 10000;
+  $('oilEditOverlay').style.display = 'flex';
+}
+$('oilEditClose').onclick = () => { $('oilEditOverlay').style.display = 'none'; };
+$('oilEditOverlay').onclick = e => { if(e.target === $('oilEditOverlay')) $('oilEditOverlay').style.display = 'none'; };
+$('oilEditSave').onclick = async () => {
+  const c = cars[oilEditId]; if(!c) return;
+  try {
+    await db('POST', 'cars?on_conflict=unit_id', [{
+      unit_id: oilEditId, name:c.name, is_manual:c.is_manual||false, brand:c.brand, plate:c.plate, fuel:c.fuel, norm:c.norm,
+      odo_value:c.odo_value, odo_date:c.odo_date,
+      oil_interval: +$('oilEditInterval').value || c.oil_interval,
+      oil_odo: $('oilEditOdo').value === '' ? null : +$('oilEditOdo').value,
+      oil_last_date: $('oilEditDate').value || null
+    }], 'resolution=merge-duplicates');
+    $('oilEditOverlay').style.display = 'none';
+    oilReport();
+  } catch(e){ alert(e.message); }
+};
 async function oilReport(){
   if(!dbReady()){ showSetup($('oSetup')); $('oEmpty').style.display='none'; return; }
   $('oProg').textContent = 'считаю…';
@@ -2176,7 +2216,7 @@ async function oilReport(){
         '<td class="mono">'+(since!==null ? Math.round(since).toLocaleString('ru')+' км' : '—')+'</td>' +
         '<td class="mono">'+(c.oil_interval||'—')+'</td>' +
         '<td class="mono'+(left!==null&&left<=0?' bad':'')+'">'+(left!==null ? (left<=0 ? 'ПРОСРОЧЕНО '+Math.round(Math.abs(left)).toLocaleString('ru')+' км' : Math.round(left).toLocaleString('ru')+' км') : '—')+'</td>' +
-        '<td><button class="dbtn" data-oil="'+g.id+'" style="padding:4px 10px;font-size:11px">Заменил сегодня</button></td>';
+        '<td><button class="dbtn" data-oil="'+g.id+'" style="padding:4px 10px;font-size:11px">Заменил сегодня</button> <button class="dbtn" data-oiledit="'+g.id+'" style="padding:4px 10px;font-size:11px">✎</button></td>';
       body.appendChild(tr);
     });
     body.querySelectorAll('[data-oil]').forEach(b => b.onclick = async () => {
@@ -2190,6 +2230,7 @@ async function oilReport(){
         oil_last_date:todayLocal() }], 'resolution=merge-duplicates');
       oilReport();
     });
+    body.querySelectorAll('[data-oiledit]').forEach(b => b.onclick = () => openOilEdit(+b.dataset.oiledit));
     try { await renderMnt(odoNowBy); }
     catch(e){
       $('mWrap').style.display = 'block';
@@ -2594,12 +2635,15 @@ $('fmSave').onclick = async () => {
 const FUELS = ['бензин','газ','дизель','электро'];
 const VCLASSES = ['легковой','грузовой'];
 function renderCm(){
-  $('cmBody').innerHTML = garageUnits().map(g => {
+  const showHidden = $('cmShowHidden').checked;
+  const list = garageUnits(true).filter(g => showHidden || !g.hidden);
+  $('cmBody').innerHTML = list.map(g => {
     const c = cars[g.id];
-    return '<tr data-uid="'+g.id+'" data-manual="'+(g.manual?1:0)+'">' +
+    return '<tr data-uid="'+g.id+'" data-manual="'+(g.manual?1:0)+'" style="'+(g.hidden?'opacity:.5':'')+'">' +
       '<td style="font-size:12px;white-space:nowrap">' +
         (g.manual ? '<input class="c-name" value="'+(c.name||'')+'" placeholder="название" style="min-width:110px">' : '<b>'+g.name+'</b>') +
-        (g.manual ? '<div style="color:var(--stop);font-size:10px">без GPS</div>' : '') + '</td>' +
+        (g.manual ? '<div style="color:var(--stop);font-size:10px">без GPS</div>' : '') +
+        (g.hidden ? '<div style="color:var(--stop);font-size:10px">скрыта</div>' : '') + '</td>' +
       '<td><input class="c-brand" value="'+(c.brand||'')+'"></td>' +
       '<td><input class="c-plate" value="'+(c.plate||'')+'"></td>' +
       '<td><select class="c-vclass">'+VCLASSES.map(v => '<option'+(c.vclass===v?' selected':'')+'>'+v+'</option>').join('')+'</select></td>' +
@@ -2610,13 +2654,32 @@ function renderCm(){
       '<td><input class="c-oili" type="number" step="500" value="'+(c.oil_interval||10000)+'" style="min-width:80px"></td>' +
       '<td><input class="c-oilodo" type="number" step="1" value="'+(c.oil_odo ?? '')+'" placeholder="одометр при замене" style="min-width:90px"></td>' +
       '<td><input class="c-oild" type="date" value="'+(c.oil_last_date||'')+'" style="min-width:120px"></td>' +
-      '<td>'+(g.manual ? '<button class="del-x c-del" title="Удалить машину">✕</button>' : '')+'</td>' +
+      '<td style="white-space:nowrap">' +
+        '<button class="dbtn c-hide" title="'+(g.hidden?'Показать машину':'Скрыть машину')+'" style="padding:4px 8px;font-size:11px">'+(g.hidden?'👁 Показать':'🙈 Скрыть')+'</button> ' +
+        (g.manual ? '<button class="del-x c-del" title="Удалить машину">✕</button>' : '') +
+      '</td>' +
       '</tr>';
   }).join('');
+  $('cmBody').querySelectorAll('.c-hide').forEach(b => b.onclick = async () => {
+    const tr = b.closest('tr'), id = +tr.dataset.uid;
+    const c = cars[id]; if(!c) return;
+    const newHidden = !c.hidden;
+    if(newHidden && !confirm('Скрыть эту машину? Она пропадёт из отчётов и списков, но данные останутся — можно вернуть в любой момент через «показать скрытые машины».')) return;
+    try {
+      const u = units.find(x => x.id === id);
+      await db('POST', 'cars?on_conflict=unit_id', [{
+        unit_id:id, name:u?u.name:c.name, is_manual:c.is_manual||false, brand:c.brand||'', plate:c.plate||'',
+        fuel:c.fuel||'бензин', norm:c.norm||10, odo_value:c.odo_value, odo_date:c.odo_date,
+        oil_interval:c.oil_interval, oil_odo:c.oil_odo, oil_last_date:c.oil_last_date, hidden:newHidden
+      }], 'resolution=merge-duplicates');
+      c.hidden = newHidden;
+      renderCm();
+    } catch(e){ alert(e.message + ' — возможно, нужно выполнить: alter table cars add column if not exists hidden boolean default false;'); }
+  });
   $('cmBody').querySelectorAll('.c-del').forEach(b => b.onclick = async () => {
     const tr = b.closest('tr'), id = +tr.dataset.uid;
     const nm = cars[id] && cars[id].name ? cars[id].name : 'машину';
-    if(!confirm('Удалить ' + nm + '? История её заправок тоже удалится.')) return;
+    if(!confirm('Удалить ' + nm + ' совсем? История её заправок тоже удалится безвозвратно. Если сомневаешься — используй «Скрыть» вместо удаления.')) return;
     try {
       if(!cars[id]._new){
         await db('DELETE', 'fuelings?unit_id=eq.' + id);
@@ -2627,6 +2690,7 @@ function renderCm(){
     } catch(e){ alert(e.message); }
   });
 }
+$('cmShowHidden').onchange = renderCm;
 $('fCarsBtn').onclick = async () => {
   if(!dbReady()){ fuelReport(); return; }
   await loadCars();
@@ -2635,7 +2699,7 @@ $('fCarsBtn').onclick = async () => {
 };
 $('cmAdd').onclick = () => {
   const id = -Date.now();
-  cars[id] = { unit_id:id, name:'', brand:'', plate:'', fuel:'бензин', norm:10, odo_value:null, odo_date:null, oil_interval:10000, oil_odo:null, oil_last_date:null, is_manual:true, _new:true };
+  cars[id] = { unit_id:id, name:'', brand:'', plate:'', fuel:'бензин', norm:10, odo_value:null, odo_date:null, oil_interval:10000, oil_odo:null, oil_last_date:null, is_manual:true, hidden:false, _new:true };
   renderCm();
   const inp = $('cmBody').querySelector('tr[data-uid="'+id+'"] .c-name');
   if(inp) inp.focus();
