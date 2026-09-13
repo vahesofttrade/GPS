@@ -2397,7 +2397,8 @@ $('mnSave').onclick = async () => {
     if(mnEditId) await db('PATCH', 'maintenance?id=eq.' + mnEditId, row);
     else await db('POST', 'maintenance', [row]);
     $('mnOverlay').style.display = 'none';
-    oilReport();
+    if($('oilView').style.display !== 'none') oilReport();
+    if($('ccOverlay').style.display === 'flex') openCarCard(row.unit_id);
   } catch(e){ alert(e.message); }
 };
 
@@ -3821,7 +3822,15 @@ async function openCarCard(id){
     h += sec('🛢 Масло', line('До замены', oilLeft !== null ? (oilLeft <= 0 ? '<span style="color:#b02a1e">ПРОСРОЧЕНО ' + Math.abs(oilLeft).toLocaleString('ru') + ' км</span>' : oilLeft.toLocaleString('ru') + ' км') : 'не задано') +
       (c.oil_last_date ? line('Последняя замена', (c.oil_odo != null ? Math.round(+c.oil_odo).toLocaleString('ru') + ' км · ' : '') + c.oil_last_date) : '') +
       '<button id="ccOilEditBtn" class="dbtn" style="margin-top:6px;padding:6px 12px;font-size:12px;width:100%">✎ Изменить данные о масле</button>');
-    if(mnts.length) h += sec('🛠 Регламенты', mnts.map(m => { const r = mntLeft(m, odoNow); return line(m.title, r ? (r.left <= 0 ? '<span style="color:#b02a1e">' + r.txt + '</span>' : r.txt) : '—'); }).join(''));
+    if(mnts.length) h += sec('🛠 Регламенты', mnts.map(m => { const r = mntLeft(m, odoNow);
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;padding:3px 0">' +
+        '<span style="flex-shrink:0;color:var(--mut)">' + m.title + '</span>' +
+        '<span class="mono" style="text-align:right;flex:1">' + (r ? (r.left <= 0 ? '<span style="color:#b02a1e">' + r.txt + '</span>' : r.txt) : '—') + '</span>' +
+        '<span style="flex-shrink:0;white-space:nowrap">' +
+          '<button class="mn-card-edit" data-mid="' + m.id + '" style="border:none;background:none;cursor:pointer;font-size:12px;padding:2px 4px" title="Изменить">✎</button>' +
+          '<button class="mn-card-del" data-mid="' + m.id + '" style="border:none;background:none;cursor:pointer;font-size:12px;padding:2px 4px;color:#b02a1e" title="Удалить">🗑</button>' +
+        '</span></div>';
+    }).join(''));
     if(docL.length) h += sec('📄 Документы', docL.map(d => line(d.dtype, 'до ' + d.valid_to + (d.cost ? ' · ' + (+d.cost).toLocaleString('ru') : ''))).join(''));
     h += sec('🔧 Заявки', line('Активных', act.length) + act.slice(0,3).map(r => line('№' + r.id + ' · ' + r.rdate, ((Array.isArray(r.lines) && r.lines[0]) || '') )).join(''));
     h += sec('💰 Затраты за текущий месяц', line('Топливо', ltM.toFixed(1) + ' л · ' + fcM.toLocaleString('ru')) + line('Ремонты', repM.toLocaleString('ru')) +
@@ -3830,6 +3839,16 @@ async function openCarCard(id){
     $('ccBody').innerHTML = h;
     $('ccTotalLine').onclick = () => openExpenseBreakdown(id, c, g, odoEntries, mil, fuels, reqR);
     $('ccOilEditBtn').onclick = () => openOilEdit(id);
+    $('ccBody').querySelectorAll('.mn-card-edit').forEach(b => b.onclick = () => {
+      const m = mnts.find(x => x.id === +b.dataset.mid);
+      if(m) openMnt(m, false);
+    });
+    $('ccBody').querySelectorAll('.mn-card-del').forEach(b => b.onclick = async () => {
+      const m = mnts.find(x => x.id === +b.dataset.mid);
+      if(!m) return;
+      if(!confirm('Удалить регламент «' + m.title + '»?')) return;
+      try { await db('DELETE', 'maintenance?id=eq.' + m.id); openCarCard(id); } catch(e){ alert(e.message); }
+    });
   } catch(e){ $('ccBody').innerHTML = '⚠ ' + e.message; }
 }
 $('ccClose').onclick = () => { $('ccOverlay').style.display = 'none'; };
