@@ -1,16 +1,21 @@
 /*
   Service worker для ТП Мониторинг.
-  ВАЖНО: кэшируется только статическая "оболочка" приложения (сам index.html,
-  манифест, иконки, внешние библиотеки с CDN). Все запросы к /wapi/* (Wialon)
-  и к Supabase — ВСЕГДА идут напрямую в сеть, никогда не кэшируются, иначе
-  можно было бы увидеть устаревшие координаты машин или старые данные.
+  ВАЖНО: кэшируется только статическая "оболочка" приложения. Все запросы к /wapi/*
+  (Wialon) и к Supabase — ВСЕГДА идут напрямую в сеть, никогда не кэшируются.
+
+  index.html и '/' — NETWORK-FIRST: всегда пытаемся взять свежую версию из сети
+  (это же сам код приложения — если кэшировать его агрессивно, любое обновление
+  приложения не будет доходить до пользователя, пока он сам не сбросит кэш).
+  Кэш для них используется только как fallback, если реально нет сети (офлайн).
+
+  Библиотеки с CDN (leaflet, qrcode) и иконки — CACHE-FIRST, они не меняются
+  между деплоями, кэшировать их агрессивно безопасно и быстрее.
 */
 
-const CACHE_NAME = 'tp-monitoring-shell-v1';
+const CACHE_NAME = 'tp-monitoring-shell-v2';
 
-const SHELL_FILES = [
-  '/',
-  '/index.html',
+const NETWORK_FIRST = ['/', '/index.html'];
+const CACHE_FIRST = [
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
@@ -22,9 +27,7 @@ const SHELL_FILES = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      // addAll может упасть, если хоть один ресурс недоступен (например, нет сети
-      // при первой установке) — подстраховываемся, чтобы установка не срывалась целиком
-      Promise.allSettled(SHELL_FILES.map((url) => cache.add(url)))
+      Promise.allSettled([...NETWORK_FIRST, ...CACHE_FIRST].map((url) => cache.add(url)))
     ).then(() => self.skipWaiting())
   );
 });
@@ -39,20 +42,32 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET') return; // POST/PATCH/DELETE к Wialon/Supabase не трогаем
+  if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
 
-  // никогда не кэшируем живые данные
   if (url.pathname.startsWith('/wapi/')) return;
   if (url.hostname.endsWith('.supabase.co')) return;
   if (url.hostname.includes('wialon')) return;
   if (url.hostname.includes('nominatim')) return;
 
-  const isShellFile = SHELL_FILES.includes(req.url) || SHELL_FILES.includes(url.pathname);
-  if (!isShellFile) return; // всё остальное — обычный сетевой запрос браузера
+  const isNetworkFirst = NETWORK_FIRST.includes(url.pathname) || (url.origin === self.location.origin && url.pathname === '/');
+  if (isNetworkFirst){
+    event.respondWith(
+      fetch(req, { cache: 'no-store' }).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+        }
+        return res;
+      }).catch(() => caches.match(req))
+    );
+    return;
+  }
 
-  // shell-файлы: кэш в приоритете, в фоне обновляем на случай нового деплоя
+  const isCacheFirst = CACHE_FIRST.includes(req.url) || CACHE_FIRST.includes(url.pathname);
+  if (!isCacheFirst) return;
+
   event.respondWith(
     caches.match(req).then((cached) => {
       const network = fetch(req).then((res) => {
@@ -66,3 +81,4 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
