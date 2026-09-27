@@ -262,7 +262,7 @@
     <div class="hint" id="drvBackF" style="cursor:pointer;margin-bottom:8px">← назад</div>
     <div class="drv-title">⛽ Заправка</div>
     <div class="drv-car" id="drvCar">…</div>
-    <label class="lbl">Литры *</label>
+    <label class="lbl" id="drvLitersLbl">Литры *</label>
     <input class="inp big" id="drvLiters" type="number" step="0.01" inputmode="decimal" placeholder="0.0">
     <label class="lbl">Одометр, км (с приборки)</label>
     <input class="inp big" id="drvOdo" type="number" inputmode="numeric" placeholder="—">
@@ -472,7 +472,7 @@
       <table class="rep" id="dTable" style="display:none">
         <thead><tr>
           <th></th><th>ТП / машина</th><th>Выезд</th><th>Возврат</th>
-          <th>Км</th><th>В движении</th><th>Долгие стоянки</th><th>Нарушения</th>
+          <th>Км</th><th>В движении</th><th>Нарушения</th>
         </tr></thead>
         <tbody id="dBody"></tbody>
       </table>
@@ -501,7 +501,9 @@
       <button class="dbtn prime" id="fRun">Отчёт</button>
       <button class="dbtn" id="fAddBtn">⛽ Заправка</button>
       <button class="dbtn" id="fCarsBtn">🚗 Машины</button>
-      <button class="dbtn" id="fQrBtn">🖨 QR</button>
+      <button class="dbtn" id="fQrBtn">🖨 QR (все)</button>
+      <select id="fQrOneCar" style="max-width:170px"></select>
+      <button class="dbtn" id="fQrOneBtn">🖨 QR (1 машина)</button>
       <button class="dbtn" id="fCollect">↻ Обновить км</button>
       <button class="dbtn" id="fPdfBtn">🖨 Подробный PDF</button>
       <button class="dbtn" id="fTankBtn">🛢 Бак</button>
@@ -512,13 +514,19 @@
       <table class="rep" id="fTable" style="display:none">
         <thead><tr>
           <th>Машина</th><th>Марка / номер</th><th>Топливо</th><th>Км</th>
-          <th>Заправлено, л</th><th>Сумма</th><th>Норма, л</th><th>Факт л/100 / норма</th><th>Отклонение</th>
+          <th>Заправлено</th><th>Сумма</th><th>Норма</th><th>Факт /100 / норма</th><th>Отклонение</th>
         </tr></thead>
         <tbody id="fBody"></tbody>
       </table>
       <div id="fLastWrap" style="display:none;padding:20px 16px">
-        <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Последние заправки</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em">Последние заправки</span>
+          <span style="margin-left:auto;font-size:12px;color:var(--mut)">С <input type="date" id="fLastFrom" style="width:130px"></span>
+          <span style="font-size:12px;color:var(--mut)">По <input type="date" id="fLastTo" style="width:130px"></span>
+          <button class="dbtn" id="fLastRun" style="padding:5px 12px;font-size:12px">Показать</button>
+        </div>
         <table class="rep"><tbody id="fLast"></tbody></table>
+        <div id="fLastEmpty" style="padding:16px 0;color:var(--mut);font-size:13px;display:none">Заправок за этот период нет</div>
       </div>
       <div id="fEmpty" style="padding:40px;text-align:center;color:var(--mut);font-size:13px">
         Выбери период и нажми «Отчёт». Сначала обнови километраж (кнопка «↻ Обновить км»).
@@ -713,6 +721,7 @@
       </select>
       <button class="dbtn prime" id="rqRun">Обновить</button>
       <button class="dbtn" id="rqPrint">🖨 PDF</button>
+      <button class="dbtn" id="rqDeleteSel" style="border-color:rgba(209,55,42,.45);color:#b02a1e">🗑 Удалить выбранные</button>
       <span class="selcount" id="rqSelCnt"></span>
       <span class="dprog" id="rqProg"></span>
     </div>
@@ -824,9 +833,12 @@
 
       <div style="height:1px;background:var(--line);margin:24px 0"></div>
 
-      <div class="disc-bar" style="padding:0 0 16px">
+      <div class="disc-bar" style="padding:0 0 16px;flex-wrap:wrap">
         <input type="date" id="pxDate">
         <button class="dbtn prime" id="pxDayBtn">Проверить за день</button>
+        <label style="font-size:12px;color:var(--mut);margin-left:10px">С <input type="time" id="pxPrintFrom" style="width:90px"></label>
+        <label style="font-size:12px;color:var(--mut)">По <input type="time" id="pxPrintTo" style="width:90px"></label>
+        <button class="dbtn" id="pxPrintBtn">🖨 Печать</button>
         <span class="dprog" id="pxDayProg"></span>
       </div>
       <div style="font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">История сближений за выбранный день</div>
@@ -1068,7 +1080,7 @@
       <h2>⛽ Новая заправка</h2>
       <div class="fm-row"><label>Машина</label><select id="fmCar"></select></div>
       <div class="fm-row"><label>Дата</label><input type="date" id="fmDate"></div>
-      <div class="fm-row"><label>Литры (или кВт·ч)</label><input type="number" id="fmLiters" step="0.01" min="0"></div>
+      <div class="fm-row"><label id="fmLitersLbl">Литры (или кВт·ч)</label><input type="number" id="fmLiters" step="0.01" min="0"></div>
       <div class="fm-row"><label>Одометр на заправке, км (для машин без GPS — обязательно)</label><input type="number" id="fmOdo" step="1" min="0"></div>
       <div class="fm-row" style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 12px">
         <input type="checkbox" id="fmFull" style="width:18px;height:18px;accent-color:var(--go)">
@@ -1666,6 +1678,7 @@ let lastRows = null, lastDate = null, dRunning = false;
 
 function hm(ts){ const d = new Date(ts*1000); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function durTxt(sec){ return Math.floor(sec/3600)+'ч '+Math.floor(sec%3600/60)+'м'; }
+function fuelUnit(carId){ return (cars[carId] && cars[carId].fuel === 'электро') ? 'кВт·ч' : 'л'; }
 function timeToMin(t){ const [h,m] = t.split(':').map(Number); return h*60+m; }
 function tsToMin(ts){ const d = new Date(ts*1000); return d.getHours()*60+d.getMinutes(); }
 
@@ -1803,7 +1816,6 @@ function renderDiscipline(rows, date, skipped){
       '<td class="mono'+(row.vios.some(v=>v.t.startsWith('ранний'))?' bad':'')+'">'+(row.lastMove?hm(row.lastMove):'—')+'</td>' +
       '<td class="mono'+(row.km<minKm?' bad':'')+'">'+row.km.toFixed(1)+'</td>' +
       '<td class="mono">'+durTxt(row.moveSec)+'</td>' +
-      '<td class="mono">'+(row.stops?row.stops.length:0)+'</td>' +
       '<td>'+(row.vios.length ? row.vios.map(v=>'<span class="vio'+(v.warn?' warn':'')+'">'+v.t+'</span>').join('') : '<span style="color:var(--go)">✓</span>')+'</td>';
     tr.onclick = () => toggleStops(tr, row);
     body.appendChild(tr);
@@ -1833,16 +1845,16 @@ function toggleStops(tr, row){
     '<div class="stop-item">🚨 '+hm(e.from)+(e.to!==e.from?' — '+hm(e.to):'')+' · макс '+Math.round(e.maxS)+' км/ч' +
     ' · <a href="https://www.openstreetmap.org/?mlat='+e.lat+'&mlon='+e.lon+'#map=17/'+e.lat+'/'+e.lon+'" target="_blank">место на карте</a></div>'
   ).join('');
-  ex.innerHTML = '<td colspan="8">' + stopsHtml + spdHtml + '</td>';
+  ex.innerHTML = '<td colspan="7">' + stopsHtml + spdHtml + '</td>';
   tr.after(ex);
 }
 
 function csvExport(){
   if(!lastRows) return;
-  let csv = '\uFEFFТП;Выезд;Возврат;Км;В движении;Долгих стоянок;Нарушения\n';
+  let csv = '\uFEFFТП;Выезд;Возврат;Км;В движении;Нарушения\n';
   lastRows.forEach(r => {
     csv += [r.name, r.firstMove?hm(r.firstMove):'', r.lastMove?hm(r.lastMove):'',
-      r.km.toFixed(1).replace('.',','), durTxt(r.moveSec), r.stops?r.stops.length:0,
+      r.km.toFixed(1).replace('.',','), durTxt(r.moveSec),
       r.vios.map(v=>v.t).join(', ')].join(';') + '\n';
   });
   const a = document.createElement('a');
@@ -2043,6 +2055,34 @@ async function collectKm(progEl, daysBack){
 
 /* ---- отчёт по топливу ---- */
 let fuelSummaryRows = [], fuelPeriodStr = '';
+async function loadRecentFuelings(){
+  const from = $('fLastFrom').value, to = $('fLastTo').value;
+  if(!from || !to) return;
+  const fClass = $('fFilterClass').value, fFuel = $('fFilterFuel').value;
+  const filteredUnits = garageUnits().filter(g => {
+    const c = cars[g.id] || {};
+    if(fClass && (c.vclass || 'легковой') !== fClass) return false;
+    if(fFuel && c.fuel !== fFuel) return false;
+    return true;
+  });
+  const filteredIds = new Set(filteredUnits.map(g => g.id));
+  const last = await dbAll('fuelings?select=*&fdate=gte.' + from + '&fdate=lte.' + to + '&order=fdate.desc,id.desc');
+  const rows = last.filter(r => filteredIds.has(r.unit_id));
+  $('fLast').innerHTML = rows.map(r => {
+    const g = garageUnits().find(x => x.id === r.unit_id);
+    return '<tr><td class="mono">'+r.fdate+'</td><td>'+(g?g.name:r.unit_id)+'</td><td class="mono">'+r.liters+' '+fuelUnit(r.unit_id)+(r.full_tank?' <span title="бак полный">🔋</span>':'')+'</td>' +
+      '<td class="mono">'+(r.odo?Math.round(r.odo).toLocaleString('ru')+' км':'')+'</td>' +
+      '<td class="mono">'+(r.cost||'—')+'</td><td>'+(r.comment||'')+'</td>' +
+      '<td><button class="del-x" data-fid="'+r.id+'">✕</button></td></tr>';
+  }).join('');
+  $('fLastEmpty').style.display = rows.length ? 'none' : 'block';
+  $('fLast').querySelectorAll('.del-x').forEach(b => b.onclick = async () => {
+    if(!confirm('Удалить заправку?')) return;
+    await db('DELETE', 'fuelings?id=eq.' + b.dataset.fid);
+    loadRecentFuelings();
+  });
+}
+$('fLastRun').onclick = loadRecentFuelings;
 async function fuelReport(){
   if(!dbReady()){ showSetup($('fSetup')); $('fEmpty').style.display='none'; return; }
   const from = $('fFrom').value, to = $('fTo').value;
@@ -2113,35 +2153,26 @@ async function fuelReport(){
       const over = normL > 0 && devPct > 10;
       const fact = factBy[g.id];
       const factOver = fact != null && c.norm > 0 && fact > c.norm * 1.1;
+      const u = fuelUnit(g.id);
       fuelSummaryRows.push({ id:g.id, name:g.name, manual:g.manual, brand:c.brand, plate:c.plate, fuelType:c.fuel,
-        km, lt, cost:costBy[g.id]||0, normL, fact, norm:c.norm||0, dev, devPct });
+        km, lt, cost:costBy[g.id]||0, normL, fact, norm:c.norm||0, dev, devPct, unit:u });
       const tr = document.createElement('tr');
       tr.innerHTML =
         '<td><b class="carlink" onclick="openCarCard('+g.id+')">'+g.name+'</b>'+(g.manual?' <span class="vio warn" style="margin-left:6px">без GPS</span>':'')+'</td>' +
         '<td>'+(c.brand||'—')+' '+(c.plate||'')+'</td>' +
         '<td>'+c.fuel+'</td>' +
         '<td class="mono">'+km.toFixed(0)+(g.manual&&!km?' <span style="color:var(--mut)" title="вводи одометр при заправках">?</span>':'')+'</td>' +
-        '<td class="mono">'+lt.toFixed(1)+'</td>' +
+        '<td class="mono">'+lt.toFixed(1)+' '+u+'</td>' +
         '<td class="mono">'+(costBy[g.id]?costBy[g.id].toFixed(0):'—')+'</td>' +
-        '<td class="mono">'+normL.toFixed(1)+'</td>' +
+        '<td class="mono">'+normL.toFixed(1)+' '+u+'</td>' +
         '<td class="mono'+(factOver?' bad':'')+'">'+(fact != null ? fact.toFixed(1)+' <span style="color:var(--mut)">/ '+(c.norm||'—')+'</span>' : '—')+'</td>' +
-        '<td class="mono'+(over?' bad':'')+'">'+(normL>0 ? (dev>0?'+':'')+dev.toFixed(1)+' л ('+(devPct>0?'+':'')+devPct.toFixed(0)+'%)' : '—')+'</td>';
+        '<td class="mono'+(over?' bad':'')+'">'+(normL>0 ? (dev>0?'+':'')+dev.toFixed(1)+' '+u+' ('+(devPct>0?'+':'')+devPct.toFixed(0)+'%)' : '—')+'</td>';
       body.appendChild(tr);
     });
-    // последние заправки
-    const last = await db('GET', 'fuelings?select=*&order=fdate.desc,id.desc&limit=15');
-    const filteredIds = new Set(filteredUnits.map(g => g.id));
-    $('fLast').innerHTML = last.filter(r => filteredIds.has(r.unit_id)).map(r => {
-      const g = garageUnits().find(x => x.id === r.unit_id);
-      return '<tr><td class="mono">'+r.fdate+'</td><td>'+(g?g.name:r.unit_id)+'</td><td class="mono">'+r.liters+' л'+(r.full_tank?' <span title="бак полный">🔋</span>':'')+'</td>' +
-        '<td class="mono">'+(r.odo?Math.round(r.odo).toLocaleString('ru')+' км':'')+'</td>' +
-        '<td class="mono">'+(r.cost||'—')+'</td><td>'+(r.comment||'')+'</td>' +
-        '<td><button class="del-x" data-fid="'+r.id+'">✕</button></td></tr>';
-    }).join('');
-    $('fLast').querySelectorAll('.del-x').forEach(b => b.onclick = async () => {
-      await db('DELETE', 'fuelings?id=eq.' + b.dataset.fid);
-      fuelReport();
-    });
+    // последние заправки (своя дата, по умолчанию — тот же период что и отчёт)
+    if(!$('fLastFrom').value){ $('fLastFrom').value = from; $('fLastTo').value = to; }
+    await loadRecentFuelings();
+    $('fQrOneCar').innerHTML = garageUnits().map(g => '<option value="'+g.id+'">'+((cars[g.id]||{}).plate || g.name)+'</option>').join('');
     $('fSetup').style.display='none'; $('fEmpty').style.display = 'none';
     $('fTable').style.display = 'table'; $('fLastWrap').style.display = 'block';
     $('fProg').textContent = '';
@@ -2582,6 +2613,7 @@ $('odFixAll').onclick = async () => {
 function updateFmTankHint(){
   const carId = +$('fmCar').value;
   const c = cars[carId] || {};
+  $('fmLitersLbl').textContent = c.fuel === 'электро' ? 'кВт·ч' : 'Литры';
   const cost = +$('fmCost').value || 0;
   if(!tank || c.fuel !== 'дизель'){ $('fmTankRow').style.display = 'none'; return; }
   $('fmTankRow').style.display = 'block';
@@ -2766,25 +2798,25 @@ $('fPdfBtn').onclick = async () => {
 function printFuelPdf(from, to, summary, detail){
   const sumTotals = summary.reduce((s,r) => { s.km+=r.km; s.lt+=r.lt; s.cost+=r.cost; s.normL+=r.normL; s.dev+=r.dev; return s; },
     { km:0, lt:0, cost:0, normL:0, dev:0 });
-  const sumHead = ['Машина','Марка / номер','Топливо','Км','Заправлено, л','Сумма','Норма, л','Факт л/100 (норма)','Отклонение'];
+  const sumHead = ['Машина','Марка / номер','Топливо','Км','Заправлено','Сумма','Норма','Факт /100 (норма)','Отклонение'];
   const sumRows = summary.map(r => [
     r.name + (r.manual ? ' (без GPS)' : ''),
     (r.brand||'—') + ' ' + (r.plate||''),
     r.fuelType || '—',
     r.km.toFixed(0),
-    r.lt.toFixed(1),
+    r.lt.toFixed(1) + ' ' + r.unit,
     r.cost ? r.cost.toFixed(0) : '—',
-    r.normL.toFixed(1),
+    r.normL.toFixed(1) + ' ' + r.unit,
     (r.fact != null ? r.fact.toFixed(1) : '—') + ' (' + (r.norm||'—') + ')',
-    r.normL > 0 ? (r.dev>0?'+':'') + r.dev.toFixed(1) + ' л (' + (r.devPct>0?'+':'') + r.devPct.toFixed(0) + '%)' : '—'
+    r.normL > 0 ? (r.dev>0?'+':'') + r.dev.toFixed(1) + ' ' + r.unit + ' (' + (r.devPct>0?'+':'') + r.devPct.toFixed(0) + '%)' : '—'
   ]);
-  const sumFootRow = ['ИТОГО','','', sumTotals.km.toFixed(0), sumTotals.lt.toFixed(1), sumTotals.cost.toFixed(0), sumTotals.normL.toFixed(1), '', (sumTotals.dev>0?'+':'') + sumTotals.dev.toFixed(1) + ' л'];
+  const sumFootRow = ['ИТОГО','','', sumTotals.km.toFixed(0), sumTotals.lt.toFixed(1), sumTotals.cost.toFixed(0), sumTotals.normL.toFixed(1), '', (sumTotals.dev>0?'+':'') + sumTotals.dev.toFixed(1)];
 
-  const detHead = ['Дата','Машина','Литры','Одометр','Полный бак','Сумма','Комментарий'];
+  const detHead = ['Дата','Машина','Кол-во','Одометр','Полный бак','Сумма','Комментарий'];
   const detRows = detail.map(r => {
     const g = garageUnits().find(x => x.id === r.unit_id);
     const c = cars[r.unit_id] || {};
-    return [r.fdate, (c.plate || (g?g.name:r.unit_id)), (+r.liters).toFixed(1),
+    return [r.fdate, (c.plate || (g?g.name:r.unit_id)), (+r.liters).toFixed(1) + ' ' + fuelUnit(r.unit_id),
       r.odo != null ? Math.round(+r.odo).toLocaleString('ru') + ' км' : '—',
       r.full_tank ? '✓' : '', r.cost ? (+r.cost).toFixed(0) : '—', r.comment || ''];
   });
@@ -2843,6 +2875,7 @@ async function initDriverPage(){
   $('drvCarM').textContent = carTitle;
   $('drvCar').textContent = carTitle;
   $('drvCarR').textContent = carTitle;
+  $('drvLitersLbl').textContent = (carRow && carRow.fuel === 'электро') ? 'кВт·ч *' : 'Литры *';
 
   // топливный бак (для авто-списания дизеля без суммы)
   let drvTank = null;
@@ -2938,7 +2971,7 @@ async function initDriverPage(){
       show('none');
       $('drvDone').style.display = 'block';
       $('drvDoneTitle').textContent = 'Заправка сохранена!';
-      $('drvSum').textContent = liters + ' л' + ($('drvFull').checked ? ' · бак полный' : '') + (odo !== null ? ' · одометр ' + odo : '');
+      $('drvSum').textContent = liters + ' ' + ((carRow && carRow.fuel === 'электро') ? 'кВт·ч' : 'л') + ($('drvFull').checked ? ' · бак полный' : '') + (odo !== null ? ' · одометр ' + odo : '');
     } catch(e){
       err.textContent = 'Не сохранилось: ' + e.message + ' — попробуй ещё раз';
       err.style.display = 'block';
@@ -2980,8 +3013,7 @@ async function initDriverPage(){
 if(location.hash.startsWith('#fuel=')) initDriverPage();
 
 /* ---- печать QR-карточек А5 ---- */
-$('fQrBtn').onclick = async () => {
-  if(!dbReady()){ fuelReport(); return; }
+async function printQrCards(unitList){
   $('fProg').textContent = 'делаю QR…';
   try {
     await loadCars();
@@ -2995,7 +3027,7 @@ $('fQrBtn').onclick = async () => {
       return m ? m[0].replace(/\s/g,'') : String(name||'').split(' ')[0];
     };
     const cards = [];
-    for(const g of garageUnits()){
+    for(const g of unitList){
       const el = document.createElement('div');
       holder.appendChild(el);
       new QRCode(el, { text: base + '#fuel=' + g.id, width:340, height:340, correctLevel: QRCode.CorrectLevel.M });
@@ -3061,6 +3093,18 @@ $('fQrBtn').onclick = async () => {
     w.document.close();
     $('fProg').textContent = '';
   } catch(e){ $('fProg').textContent = '⚠ ' + e.message; }
+}
+$('fQrBtn').onclick = async () => {
+  if(!dbReady()){ fuelReport(); return; }
+  await loadCars();
+  printQrCards(garageUnits());
+};
+$('fQrOneBtn').onclick = async () => {
+  if(!dbReady()){ fuelReport(); return; }
+  await loadCars();
+  const id = +$('fQrOneCar').value;
+  if(!id){ alert('Выбери машину'); return; }
+  printQrCards([garageUnits().find(g => g.id === id)]);
 };
 
 /* ================= ЗАЯВКИ НА РЕМОНТ ================= */
@@ -3145,6 +3189,21 @@ function updateRqSel(){
   $('rqSelCnt').textContent = n ? 'выбрано: ' + n : '';
 }
 $('rqSort').onchange = renderReqs;
+$('rqDeleteSel').onclick = async () => {
+  const sel = selectedIds($('rqList')).map(Number);
+  if(!sel.length){ alert('Отметь галочками заявки, которые хочешь удалить (обычно — старые завершённые/отклонённые).'); return; }
+  const list = reqsFiltered().filter(r => sel.includes(r.id));
+  const activeCount = list.filter(r => r.status === 'новая' || r.status === 'в работе').length;
+  let msg = 'Удалить безвозвратно ' + sel.length + ' заявок?';
+  if(activeCount) msg += '\n⚠ Среди них ' + activeCount + ' ещё активных (новая/в работе)!';
+  if(!confirm(msg)) return;
+  $('rqProg').textContent = 'удаляю…';
+  try {
+    for(const id of sel){ await db('DELETE', 'repair_requests?id=eq.' + id); }
+    $('rqProg').textContent = '';
+    reqReport();
+  } catch(e){ $('rqProg').textContent = '⚠ ' + e.message; }
+};
 $('rqPrint').onclick = () => {
   const sel = selectedIds($('rqList')).map(Number);
   let list = reqsFiltered();
@@ -3190,6 +3249,7 @@ function drawStatusRow(){
   if(r.status === 'новая'){
     row.appendChild(mk('▶ В работу', '', () => setReqStatus('в работе')));
     row.appendChild(mk('✕ Отклонить', '', () => setReqStatus('отклонена')));
+    row.appendChild(mk('✎ Указать сумму/работы', '', () => { $('rqCost').value = r.cost||''; $('rqWorks').value = r.works||''; $('rqFinish').style.display = 'block'; }));
   } else if(r.status === 'в работе'){
     row.appendChild(mk('✓ Завершить…', '', () => { $('rqCost').value = r.cost||''; $('rqWorks').value = r.works||''; $('rqFinish').style.display = 'block'; }));
     row.appendChild(mk('↩ Вернуть в новые', '', () => setReqStatus('новая')));
@@ -3199,6 +3259,7 @@ function drawStatusRow(){
     row.appendChild(mk('✎ Изменить сумму/работы', '', () => { $('rqCost').value = r.cost||''; $('rqWorks').value = r.works||''; $('rqFinish').style.display = 'block'; }));
   } else if(r.status === 'отклонена'){
     row.appendChild(mk('↩ Вернуть в новые', '', () => setReqStatus('новая')));
+    row.appendChild(mk('✎ Указать сумму/работы', '', () => { $('rqCost').value = r.cost||''; $('rqWorks').value = r.works||''; $('rqFinish').style.display = 'block'; }));
   }
 }
 
@@ -3214,7 +3275,8 @@ async function setReqStatus(st){
 
 $('rqSaveDone').onclick = async () => {
   try {
-    const patch = { status:'завершена', cost:+$('rqCost').value || 0, works:$('rqWorks').value.trim(), done_date:todayLocal() };
+    const patch = { cost:+$('rqCost').value || 0, works:$('rqWorks').value.trim() };
+    if(curReq.status === 'в работе'){ patch.status = 'завершена'; patch.done_date = todayLocal(); }
     await db('PATCH', 'repair_requests?id=eq.' + curReq.id, patch);
     Object.assign(curReq, patch);
     drawStatusRow();
@@ -3804,7 +3866,7 @@ async function openCarCard(id){
     const sec = (t, inner) => '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;border-bottom:1px solid var(--line);padding-bottom:3px">' + t + '</div>' + inner + '</div>';
     const line = (l, v) => '<div style="display:flex;justify-content:space-between;gap:14px;font-size:13px;padding:3px 0"><span style="color:var(--dim);flex-shrink:0">' + l + '</span><span class="mono" style="text-align:right;overflow:hidden;text-overflow:ellipsis">' + v + '</span></div>';
     let h = '';
-    h += sec('Основное', line('Объект Wialon', g.name) + line('Топливо', (c.fuel||'—') + ' · норма ' + (c.norm||'—') + ' л/100км') + (g.manual ? line('GPS', 'нет (учёт по одометру)') : ''));
+    h += sec('Основное', line('Объект Wialon', g.name) + line('Топливо', (c.fuel||'—') + ' · норма ' + (c.norm||'—') + ' ' + fuelUnit(id) + '/100км') + (g.manual ? line('GPS', 'нет (учёт по одометру)') : ''));
     const todayA = todayLocal();
     const curAsg = asgs.find(a => a.date_from <= todayA && (!a.date_to || a.date_to >= todayA));
     let curAsgDriverName = null;
@@ -3835,7 +3897,7 @@ async function openCarCard(id){
     h += sec('🔧 Заявки', line('Активных', act.length) + act.slice(0,3).map(r => line('№' + r.id + ' · ' + r.rdate, ((Array.isArray(r.lines) && r.lines[0]) || '') )).join(''));
     h += sec('💰 Затраты за текущий месяц', line('Топливо', ltM.toFixed(1) + ' л · ' + fcM.toLocaleString('ru')) + line('Ремонты', repM.toLocaleString('ru')) +
       '<div id="ccTotalLine" style="display:flex;justify-content:space-between;gap:14px;font-size:13px;padding:3px 0;cursor:pointer;color:var(--acc,#2a6db0)" title="Показать расшифровку расходов"><span style="flex-shrink:0">Итого (клик — расшифровка)</span><span class="mono" style="text-align:right"><b>' + (fcM + repM).toLocaleString('ru') + '</b></span></div>');
-    if(fuels.length) h += sec('⛽ Последние заправки', fuels.slice(0,5).map(r => line(r.fdate, r.liters + ' л' + (r.full_tank ? ' 🔋' : '') + (r.odo ? ' · ' + Math.round(+r.odo).toLocaleString('ru') + ' км' : ''))).join(''));
+    if(fuels.length) h += sec('⛽ Последние заправки', fuels.slice(0,5).map(r => line(r.fdate, r.liters + ' ' + fuelUnit(id) + (r.full_tank ? ' 🔋' : '') + (r.odo ? ' · ' + Math.round(+r.odo).toLocaleString('ru') + ' км' : ''))).join(''));
     $('ccBody').innerHTML = h;
     $('ccTotalLine').onclick = () => openExpenseBreakdown(id, c, g, odoEntries, mil, fuels, reqR);
     $('ccOilEditBtn').onclick = () => openOilEdit(id);
@@ -3902,7 +3964,7 @@ function openExpenseBreakdown(id, c, g, odoEntries, mil, fuels, reqR){
   fuels.forEach(r => {
     if(!r.cost) return;
     const odo = r.odo != null ? +r.odo : odoAtDate(r.fdate, odoEntries, mil, g.manual);
-    rows.push({ id:r.id, source:'fuel', d:r.fdate, type:'⛽ Топливо', desc:r.liters + ' л' + (r.full_tank ? ' (полный бак)' : ''), odo, cost:+r.cost, raw:r });
+    rows.push({ id:r.id, source:'fuel', d:r.fdate, type:'⛽ Топливо', desc:r.liters + ' ' + fuelUnit(id) + (r.full_tank ? ' (полный бак)' : ''), odo, cost:+r.cost, raw:r });
   });
   reqR.filter(r => r.status === 'завершена').forEach(r => {
     const d = r.done_date || r.rdate;
@@ -4012,10 +4074,12 @@ function openFuelEditModal(raw){
     (g.id === raw.unit_id ? ' selected' : '') + '>' + (g.name) + (cars[g.id] && cars[g.id].plate ? ' · ' + cars[g.id].plate : '') + '</option>').join('');
   $('fmDate').value = raw.fdate;
   $('fmLiters').value = raw.liters;
+  $('fmLitersLbl').textContent = (cars[raw.unit_id] && cars[raw.unit_id].fuel === 'электро') ? 'кВт·ч' : 'Литры';
   $('fmOdo').value = raw.odo != null ? raw.odo : '';
   $('fmFull').checked = !!raw.full_tank;
   $('fmCost').value = raw.cost || '';
   $('fmComment').value = raw.comment || '';
+  $('fmTankRow').style.display = 'none';
   $('fmOverlay').style.display = 'flex';
 }
 
@@ -4028,6 +4092,7 @@ function showOnMainMap(lat, lon){
 
 /* ---- трек сближения (для истории за день и для «сейчас») ---- */
 let pxDayTracks = {}, pxDayTracksDate = null;
+let pxDayMerged = [], pxDayMergedDate = '', pxDayMergedRadius = 0, pxDayMergedInterval = 0;
 let encLayers = [];
 function clearEncounterTrack(){
   encLayers.forEach(l => map.removeLayer(l));
@@ -4419,6 +4484,7 @@ $('pxDayBtn').onclick = async () => {
       }
     });
     merged.sort((x,y) => x.from - y.from);
+    pxDayMerged = merged; pxDayMergedDate = date; pxDayMergedRadius = radius; pxDayMergedInterval = intervalMin;
     const body = $('pxDayBody'); body.innerHTML = '';
     merged.forEach(ev => {
       const an = (cars[ev.a.id] && cars[ev.a.id].plate) || ev.a.name;
@@ -4438,6 +4504,28 @@ $('pxDayBtn').onclick = async () => {
     $('pxDayEmpty').textContent = merged.length ? '' : 'За этот день сближений (≤ ' + radius + ' м, шаг ' + intervalMin + ' мин, вне зон исключения) не найдено.';
     $('pxDayProg').textContent = '';
   } catch(e){ $('pxDayProg').textContent = '⚠ ' + e.message; }
+};
+$('pxPrintBtn').onclick = () => {
+  if(!pxDayMerged.length){ alert('Сначала нажми «Проверить за день» — печатать пока нечего.'); return; }
+  const tf = $('pxPrintFrom').value, tt = $('pxPrintTo').value;
+  const filtered = pxDayMerged.filter(ev => {
+    if(!tf && !tt) return true;
+    const evTime = hm(ev.from);
+    if(tf && evTime < tf) return false;
+    if(tt && evTime > tt) return false;
+    return true;
+  });
+  if(!filtered.length){ alert('Нет сближений в указанном интервале времени.'); return; }
+  printTable({
+    title: 'Сближения машин · ' + pxDayMergedDate + (tf || tt ? ' · ' + (tf||'00:00') + '–' + (tt||'23:59') : ''),
+    columns: [{h:'Время'},{h:'Машина 1'},{h:'Машина 2'},{h:'Расстояние',num:true}],
+    rows: filtered.map(ev => {
+      const an = (cars[ev.a.id] && cars[ev.a.id].plate) || ev.a.name;
+      const bn = (cars[ev.b.id] && cars[ev.b.id].plate) || ev.b.name;
+      return [fullDT(ev.from) + (ev.to!==ev.from ? ' — '+hm(ev.to) : ''), an, bn, Math.round(ev.minDist) + ' м'];
+    }),
+    footer: 'Радиус ≤ ' + pxDayMergedRadius + ' м · интервал сверки ' + pxDayMergedInterval + ' мин · событий: ' + filtered.length
+  });
 };
 
 /* ================= ВОДИТЕЛИ / ИСТОРИЯ ПЕРЕДАЧИ МАШИН ================= */
