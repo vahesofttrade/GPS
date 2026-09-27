@@ -2073,12 +2073,20 @@ async function loadRecentFuelings(){
     return '<tr><td class="mono">'+r.fdate+'</td><td>'+(g?g.name:r.unit_id)+'</td><td class="mono">'+r.liters+' '+fuelUnit(r.unit_id)+(r.full_tank?' <span title="бак полный">🔋</span>':'')+'</td>' +
       '<td class="mono">'+(r.odo?Math.round(r.odo).toLocaleString('ru')+' км':'')+'</td>' +
       '<td class="mono">'+(r.cost||'—')+'</td><td>'+(r.comment||'')+'</td>' +
-      '<td><button class="del-x" data-fid="'+r.id+'">✕</button></td></tr>';
+      '<td style="white-space:nowrap"><button class="dbtn edit-x" data-fid="'+r.id+'" style="padding:3px 8px;font-size:11px;margin-right:4px">✎</button><button class="del-x" data-fid="'+r.id+'">✕</button></td></tr>';
   }).join('');
   $('fLastEmpty').style.display = rows.length ? 'none' : 'block';
+  $('fLast').querySelectorAll('.edit-x').forEach(b => b.onclick = async () => {
+    const r = rows.find(x => x.id === +b.dataset.fid);
+    if(!r) return;
+    try { await loadTank(); } catch(e){}
+    openFuelEditModal(r);
+  });
   $('fLast').querySelectorAll('.del-x').forEach(b => b.onclick = async () => {
     if(!confirm('Удалить заправку?')) return;
+    const r = rows.find(x => x.id === +b.dataset.fid);
     await db('DELETE', 'fuelings?id=eq.' + b.dataset.fid);
+    if(r){ try { await loadTank(); await reconcileTankForFueling(r.id, r.unit_id, 0, r.fdate, false); } catch(e){} }
     loadRecentFuelings();
   });
 }
@@ -2647,14 +2655,17 @@ $('fmSave').onclick = async () => {
   const cost = +$('fmCost').value || 0;
   try {
     const row = { unit_id: carId, fdate:$('fmDate').value, liters, cost, comment:$('fmComment').value.trim(), odo, full_tank:$('fmFull').checked };
+    const c = cars[carId] || {};
+    const shouldDeduct = !!(tank && c.fuel === 'дизель' && cost === 0);
     if(fmEditId != null){
       await db('PATCH', 'fuelings?id=eq.' + fmEditId, row);
+      if(tank) await reconcileTankForFueling(fmEditId, carId, liters, $('fmDate').value, shouldDeduct);
     } else {
-      await db('POST', 'fuelings', [row]);
-      const c = cars[carId] || {};
-      if(tank && c.fuel === 'дизель' && cost === 0){
+      const created = await db('POST', 'fuelings', [row]);
+      const newId = Array.isArray(created) ? created[0].id : created.id;
+      if(shouldDeduct){
         const newCounter = (tank.counter != null ? Number(tank.counter) : 0) + liters;
-        await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date: $('fmDate').value, type:'issue', volume: -liters, unit_id: carId, counter: newCounter, note: 'авто-списание: дизель без суммы (через ⛽ Заправка)' }]);
+        await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date: $('fmDate').value, type:'issue', volume: -liters, unit_id: carId, counter: newCounter, fueling_id:newId, note: 'авто-списание: дизель без суммы (через ⛽ Заправка)' }]);
         await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter: newCounter });
         tank.counter = newCounter;
       }
@@ -2664,6 +2675,35 @@ $('fmSave').onclick = async () => {
     else fuelReport();
   } catch(e){ alert(e.message); }
 };
+/* приводит списание с бака в соответствие с отредактированной заправкой:
+   создаёт/обновляет/удаляет связанную запись в fuel_tank_log, поправляет счётчик на разницу */
+async function reconcileTankForFueling(fuelingId, carId, newLiters, date, shouldDeduct){
+  try {
+    const existing = await dbAll('fuel_tank_log?select=*&fueling_id=eq.' + fuelingId + '&limit=1');
+    const cur = existing[0] || null;
+    const curCounter = tank.counter != null ? Number(tank.counter) : 0;
+    if(cur && shouldDeduct){
+      const oldLiters = -Number(cur.volume);
+      const delta = newLiters - oldLiters;
+      const newCounter = curCounter + delta;
+      await db('PATCH', 'fuel_tank_log?id=eq.' + cur.id, { volume: -newLiters, date, unit_id:carId, counter:newCounter });
+      await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter:newCounter });
+      tank.counter = newCounter;
+    } else if(cur && !shouldDeduct){
+      const oldLiters = -Number(cur.volume);
+      const newCounter = curCounter - oldLiters;
+      await db('DELETE', 'fuel_tank_log?id=eq.' + cur.id);
+      await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter:newCounter });
+      tank.counter = newCounter;
+    } else if(!cur && shouldDeduct){
+      const newCounter = curCounter + newLiters;
+      await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date, type:'issue', volume: -newLiters, unit_id: carId, counter: newCounter, fueling_id: fuelingId, note: 'авто-списание: дизель без суммы (через ⛽ Заправка, изменено)' }]);
+      await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter: newCounter });
+      tank.counter = newCounter;
+    }
+    // если !cur && !shouldDeduct — трогать нечего
+  } catch(e){ /* нет колонки fueling_id и т.п. — молча пропускаем, старое поведение сохранится */ }
+}
 
 /* ---- модалка машин ---- */
 const FUELS = ['бензин','газ','дизель','электро'];
@@ -2958,12 +2998,13 @@ async function initDriverPage(){
     try {
       const odo = $('drvOdo').value === '' ? null : +$('drvOdo').value;
       const cost = +$('drvCost').value || 0;
-      await db('POST', 'fuelings', [{ unit_id:id, fdate:$('drvDate').value, liters,
+      const created = await db('POST', 'fuelings', [{ unit_id:id, fdate:$('drvDate').value, liters,
         odo, cost, comment:'QR', full_tank:$('drvFull').checked }]);
+      const newFuelingId = Array.isArray(created) ? created[0].id : (created && created.id);
       if(drvTank && carRow && carRow.fuel === 'дизель' && cost === 0){
         try {
           const newCounter = (drvTank.counter != null ? Number(drvTank.counter) : 0) + liters;
-          await db('POST', 'fuel_tank_log', [{ tank_id: drvTank.id, date: $('drvDate').value, type:'issue', volume: -liters, unit_id: id, counter: newCounter, note:'авто-списание: дизель без суммы (QR водителя)' }]);
+          await db('POST', 'fuel_tank_log', [{ tank_id: drvTank.id, date: $('drvDate').value, type:'issue', volume: -liters, unit_id: id, counter: newCounter, fueling_id:newFuelingId, note:'авто-списание: дизель без суммы (QR водителя)' }]);
           await db('PATCH', 'fuel_tanks?id=eq.' + drvTank.id, { counter: newCounter });
           drvTank.counter = newCounter;
         } catch(e){}
@@ -3951,6 +3992,7 @@ async function deleteExpenseRow(row){
   try {
     const table = row.source === 'fuel' ? 'fuelings' : 'repair_requests';
     await db('DELETE', table + '?id=eq.' + row.id);
+    if(row.source === 'fuel' && tank) await reconcileTankForFueling(row.id, row.raw.unit_id, 0, row.d, false);
     exAllRows = exAllRows.filter(r => !(r.source === row.source && r.id === row.id));
     renderExRows();
   } catch(e){ alert(e.message); }
