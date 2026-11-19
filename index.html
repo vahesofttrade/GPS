@@ -255,6 +255,7 @@
     <div id="drvOil" style="display:none;border:1px solid var(--line);border-radius:10px;padding:11px 14px;font-size:14px;font-weight:700;margin-bottom:14px"></div>
     <button class="btn" id="drvGoFuel" style="margin-top:0">⛽ Заправка</button>
     <button class="btn" id="drvGoRepair" style="margin-top:12px;background:var(--stop);color:#ffffff">🔧 Заявка на ремонт / ТО</button>
+    <button class="btn" id="drvGoOil" style="margin-top:12px;background:#0b7a3e;color:#ffffff">🛢 Замена масла</button>
     <button class="dbtn" id="drvCancel" style="width:100%;margin-top:12px;padding:12px;color:var(--dim)">✖ Отмена</button>
   </div>
 
@@ -276,6 +277,18 @@
     <input class="inp" id="drvDate" type="date">
     <button class="btn" id="drvSave">Сохранить</button>
     <div class="err" id="drvErr"></div>
+  </div>
+
+  <div class="drv-card" id="drvOilForm" style="display:none">
+    <div class="hint" id="drvBackO" style="cursor:pointer;margin-bottom:8px">← назад</div>
+    <div class="drv-title">🛢 Замена масла</div>
+    <div class="drv-car" id="drvCarO">…</div>
+    <label class="lbl">Показание одометра, км *</label>
+    <input class="inp big" id="drvOilOdo" type="number" inputmode="numeric" placeholder="напр. 125400">
+    <label class="lbl">Дата замены</label>
+    <input class="inp" id="drvOilDate" type="date">
+    <button class="btn" id="drvOilSave">Сохранить</button>
+    <div class="err" id="drvOilErr"></div>
   </div>
 
   <div class="drv-card" id="drvRepair" style="display:none">
@@ -2949,6 +2962,7 @@ async function initDriverPage(){
   $('drvView').style.display = 'flex';
   $('drvDate').value = todayLocal();
   $('drvRDate').value = todayLocal();
+  $('drvOilDate').value = todayLocal();
   let carTitle = 'Машина #' + id, carRow = null;
   try {
     const r = await db('GET', 'cars?unit_id=eq.' + id + '&select=*');
@@ -2957,6 +2971,7 @@ async function initDriverPage(){
   $('drvCarM').textContent = carTitle;
   $('drvCar').textContent = carTitle;
   $('drvCarR').textContent = carTitle;
+  $('drvCarO').textContent = carTitle;
   $('drvLitersLbl').textContent = (carRow && carRow.fuel === 'электро') ? 'кВт·ч *' : 'Литры *';
 
   // топливный бак (для авто-списания дизеля без суммы)
@@ -3022,6 +3037,7 @@ async function initDriverPage(){
     $('drvMenu').style.display = which==='menu' ? 'block' : 'none';
     $('drvForm').style.display = which==='fuel' ? 'block' : 'none';
     $('drvRepair').style.display = which==='rep' ? 'block' : 'none';
+    $('drvOilForm').style.display = which==='oil' ? 'block' : 'none';
   };
   $('drvCancel').onclick = () => {
     window.close();
@@ -3029,6 +3045,39 @@ async function initDriverPage(){
   };
   $('drvGoFuel').onclick = () => show('fuel');
   $('drvGoRepair').onclick = () => show('rep');
+  $('drvGoOil').onclick = () => show('oil');
+  $('drvBackO').onclick = () => show('menu');
+  $('drvOilSave').onclick = async () => {
+    const err = $('drvOilErr'); err.style.display = 'none';
+    const odo = $('drvOilOdo').value === '' ? null : Math.round(+$('drvOilOdo').value);
+    const dt = $('drvOilDate').value || todayLocal();
+    if(odo === null || !(odo > 0)){ err.textContent = 'Укажи показание одометра'; err.style.display = 'block'; return; }
+    $('drvOilSave').disabled = true; $('drvOilSave').textContent = 'Сохраняю…';
+    try {
+      // графа «Замена масла» в карточке машины
+      await db('PATCH', 'cars?unit_id=eq.' + id, { oil_odo: odo, oil_last_date: dt });
+      // регламенты ТО по пробегу, где в названии есть «масл»
+      let mntUpd = 0;
+      try {
+        const ms = await db('GET', 'maintenance?select=*&unit_id=eq.' + id);
+        for(const m of (ms||[])){
+          if(m.mtype === 'km' && /масл/i.test(m.title || '')){
+            await db('PATCH', 'maintenance?id=eq.' + m.id, { last_odo: odo, last_date: dt });
+            mntUpd++;
+          }
+        }
+      } catch(e){}
+      if(carRow){ carRow.oil_odo = odo; carRow.oil_last_date = dt; }
+      show('none');
+      $('drvDone').style.display = 'block';
+      $('drvDoneTitle').textContent = 'Замена масла сохранена!';
+      $('drvSum').textContent = odo.toLocaleString('ru') + ' км · ' + dt;
+    } catch(e){
+      err.textContent = 'Не сохранилось: ' + e.message + ' — попробуй ещё раз';
+      err.style.display = 'block';
+      $('drvOilSave').disabled = false; $('drvOilSave').textContent = 'Сохранить';
+    }
+  };
   $('drvBackF').onclick = () => show('menu');
   $('drvBackR').onclick = () => show('menu');
 
