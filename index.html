@@ -462,6 +462,17 @@
       <button class="dbtn" id="dPrev">←</button>
       <button class="dbtn" id="dNext">→</button>
       <button class="dbtn prime" id="dRun">Сформировать</button>
+      <select id="dVioFilter" title="Фильтр по виду нарушения">
+        <option value="">Все нарушения</option>
+        <option value="any">Только с нарушениями</option>
+        <option value="noshow">Не выезжал</option>
+        <option value="late">Поздний выезд</option>
+        <option value="early">Ранний финиш</option>
+        <option value="km">Мало км</option>
+        <option value="stop">Долгие стоянки</option>
+        <option value="speed">Превышение скорости</option>
+        <option value="clean">Без нарушений</option>
+      </select>
       <button class="dbtn" id="dSettings">⚙ Правила</button>
       <button class="dbtn" id="dIndiv">🚗 Индивидуальные</button>
       <button class="dbtn" id="dCsv" style="display:none">⬇ Excel (CSV)</button>
@@ -1732,16 +1743,16 @@ function analyzeDay(pts, s){
   if(spRun !== null) speedEvents.push({ from:spRun, to:pts[pts.length-1].t, maxS:spMax, lat:pts[pts.length-1].lat, lon:pts[pts.length-1].lon });
   // нарушения
   const vios = [];
-  if(firstMove === null) vios.push({t:'не выезжал', hard:true});
+  if(firstMove === null) vios.push({k:'noshow', t:'не выезжал', hard:true});
   else {
-    if(tsToMin(firstMove) > timeToMin(s.start)) vios.push({t:'поздний выезд '+hm(firstMove)});
-    if(lastMove && tsToMin(lastMove) < timeToMin(s.end)) vios.push({t:'ранний финиш '+hm(lastMove)});
+    if(tsToMin(firstMove) > timeToMin(s.start)) vios.push({k:'late', t:'поздний выезд '+hm(firstMove)});
+    if(lastMove && tsToMin(lastMove) < timeToMin(s.end)) vios.push({k:'early', t:'ранний финиш '+hm(lastMove)});
   }
-  if(km < s.minKm) vios.push({t:'мало км ('+km.toFixed(0)+')'});
-  badStops.forEach(st => vios.push({t:'стоянка '+hm(st.from)+' — '+durTxt(st.dur), warn:true}));
+  if(km < s.minKm) vios.push({k:'km', t:'мало км ('+km.toFixed(0)+')'});
+  badStops.forEach(st => vios.push({k:'stop', t:'стоянка '+hm(st.from)+' — '+durTxt(st.dur), warn:true}));
   if(speedEvents.length){
     const overallMax = Math.max(...speedEvents.map(e => e.maxS));
-    vios.push({t:'превышение скорости ×'+speedEvents.length+' (макс '+Math.round(overallMax)+' км/ч, лимит '+s.spdLimit+')'});
+    vios.push({k:'speed', t:'превышение скорости ×'+speedEvents.length+' (макс '+Math.round(overallMax)+' км/ч, лимит '+s.spdLimit+')'});
   }
   return { noData:false, firstMove, lastMove, km, moveSec, stops, badStops, speedEvents, vios };
 }
@@ -1797,8 +1808,17 @@ async function runDiscipline(force){
   renderDiscipline(rows, date, skipped);
 }
 
-function renderDiscipline(rows, date, skipped){
-  lastRows = rows; lastDate = date;
+let lastSkipped = 0;
+function vioFilterMatch(row){
+  const f = $('dVioFilter') ? $('dVioFilter').value : '';
+  if(!f) return true;
+  if(f === 'clean') return !row.noData && row.vios.length === 0;
+  if(f === 'any') return row.vios.length > 0;
+  return row.vios.some(v => v.k === f);
+}
+function renderDiscipline(allRows, date, skipped){
+  lastRows = allRows; lastDate = date; lastSkipped = skipped;
+  const rows = allRows.filter(vioFilterMatch);
   rows.sort((a,b) => (b.vios.length + (b.noData?9:0)) - (a.vios.length + (a.noData?9:0)));
   const body = $('dBody');
   body.innerHTML = '';
@@ -1852,7 +1872,7 @@ function toggleStops(tr, row){
 function csvExport(){
   if(!lastRows) return;
   let csv = '\uFEFFТП;Выезд;Возврат;Км;В движении;Нарушения\n';
-  lastRows.forEach(r => {
+  lastRows.filter(vioFilterMatch).forEach(r => {
     csv += [r.name, r.firstMove?hm(r.firstMove):'', r.lastMove?hm(r.lastMove):'',
       r.km.toFixed(1).replace('.',','), durTxt(r.moveSec),
       r.vios.map(v=>v.t).join(', ')].join(';') + '\n';
@@ -1914,6 +1934,7 @@ $('dRun').onclick = () => runDiscipline();
 $('dPrev').onclick = () => shiftDay(-1);
 $('dNext').onclick = () => shiftDay(1);
 $('dCsv').onclick = csvExport;
+$('dVioFilter').onchange = () => { if(lastRows) renderDiscipline(lastRows, lastDate, lastSkipped); };
 $('dSettings').onclick = () => { $('setOverlay').style.display = 'flex'; };
 $('setOverlay').onclick = e => { if(e.target === $('setOverlay')) $('setOverlay').style.display = 'none'; };
 $('sApply').onclick = () => {
@@ -2665,7 +2686,7 @@ $('fmSave').onclick = async () => {
       const newId = Array.isArray(created) ? created[0].id : created.id;
       if(shouldDeduct){
         const newCounter = (tank.counter != null ? Number(tank.counter) : 0) + liters;
-        await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date: $('fmDate').value, type:'issue', volume: -liters, unit_id: carId, counter: newCounter, fueling_id:newId, note: 'авто-списание: дизель без суммы (через ⛽ Заправка)' }]);
+        await insertTankLog({ tank_id: tank.id, date: $('fmDate').value, type:'issue', volume: -liters, unit_id: carId, counter: newCounter, fueling_id:newId, note: 'авто-списание: дизель без суммы (через ⛽ Заправка)' });
         await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter: newCounter });
         tank.counter = newCounter;
       }
@@ -2675,6 +2696,15 @@ $('fmSave').onclick = async () => {
     else fuelReport();
   } catch(e){ alert(e.message); }
 };
+/* вставка записи в журнал бака; если колонки fueling_id нет в БД — повтор без неё */
+async function insertTankLog(row){
+  try { return await db('POST','fuel_tank_log',[row]); }
+  catch(e){
+    if(row.fueling_id === undefined) throw e;
+    const r2 = Object.assign({}, row); delete r2.fueling_id;
+    return await db('POST','fuel_tank_log',[r2]);
+  }
+}
 /* приводит списание с бака в соответствие с отредактированной заправкой:
    создаёт/обновляет/удаляет связанную запись в fuel_tank_log, поправляет счётчик на разницу */
 async function reconcileTankForFueling(fuelingId, carId, newLiters, date, shouldDeduct){
@@ -2697,7 +2727,7 @@ async function reconcileTankForFueling(fuelingId, carId, newLiters, date, should
       tank.counter = newCounter;
     } else if(!cur && shouldDeduct){
       const newCounter = curCounter + newLiters;
-      await db('POST', 'fuel_tank_log', [{ tank_id: tank.id, date, type:'issue', volume: -newLiters, unit_id: carId, counter: newCounter, fueling_id: fuelingId, note: 'авто-списание: дизель без суммы (через ⛽ Заправка, изменено)' }]);
+      await insertTankLog({ tank_id: tank.id, date, type:'issue', volume: -newLiters, unit_id: carId, counter: newCounter, fueling_id: fuelingId, note: 'авто-списание: дизель без суммы (через ⛽ Заправка, изменено)' });
       await db('PATCH', 'fuel_tanks?id=eq.' + tank.id, { counter: newCounter });
       tank.counter = newCounter;
     }
@@ -3001,13 +3031,13 @@ async function initDriverPage(){
       const created = await db('POST', 'fuelings', [{ unit_id:id, fdate:$('drvDate').value, liters,
         odo, cost, comment:'QR', full_tank:$('drvFull').checked }]);
       const newFuelingId = Array.isArray(created) ? created[0].id : (created && created.id);
-      if(drvTank && carRow && carRow.fuel === 'дизель' && cost === 0){
+      if(drvTank && carRow && String(carRow.fuel||'').toLowerCase().indexOf('дизел') === 0 && cost === 0){
         try {
           const newCounter = (drvTank.counter != null ? Number(drvTank.counter) : 0) + liters;
-          await db('POST', 'fuel_tank_log', [{ tank_id: drvTank.id, date: $('drvDate').value, type:'issue', volume: -liters, unit_id: id, counter: newCounter, fueling_id:newFuelingId, note:'авто-списание: дизель без суммы (QR водителя)' }]);
+          await insertTankLog({ tank_id: drvTank.id, date: $('drvDate').value, type:'issue', volume: -liters, unit_id: id, counter: newCounter, fueling_id:newFuelingId, note:'авто-списание: дизель без суммы (QR водителя)' });
           await db('PATCH', 'fuel_tanks?id=eq.' + drvTank.id, { counter: newCounter });
           drvTank.counter = newCounter;
-        } catch(e){}
+        } catch(e){ console.error('tank deduct failed', e); alert('Заправка сохранена, но бак не обновился: ' + e.message + '\nЗапустите в Supabase: alter table fuel_tank_log add column if not exists fueling_id bigint;'); }
       }
       show('none');
       $('drvDone').style.display = 'block';
