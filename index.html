@@ -1816,6 +1816,14 @@ function vioFilterMatch(row){
   if(f === 'any') return row.vios.length > 0;
   return row.vios.some(v => v.k === f);
 }
+function curVioKind(){
+  const f = $('dVioFilter') ? $('dVioFilter').value : '';
+  return (f && f !== 'any' && f !== 'clean') ? f : '';
+}
+function shownVios(row){
+  const k = curVioKind();
+  return k ? row.vios.filter(v => v.k === k) : row.vios;
+}
 function renderDiscipline(allRows, date, skipped){
   lastRows = allRows; lastDate = date; lastSkipped = skipped;
   const rows = allRows.filter(vioFilterMatch);
@@ -1824,7 +1832,8 @@ function renderDiscipline(allRows, date, skipped){
   body.innerHTML = '';
   let g=0,y=0,r=0;
   rows.forEach((row, idx) => {
-    const lc = lampClass(row);
+    const sv = shownVios(row);
+    const lc = curVioKind() ? (sv.some(v=>v.hard) ? 'l-r' : (sv.length>=2 ? 'l-r' : 'l-y')) : lampClass(row);
     if(lc==='l-g') g++; else if(lc==='l-y') y++; else r++;
     const minKm = row.eff ? row.eff.minKm : SET.minKm;
     const tr = document.createElement('tr');
@@ -1836,7 +1845,7 @@ function renderDiscipline(allRows, date, skipped){
       '<td class="mono'+(row.vios.some(v=>v.t.startsWith('ранний'))?' bad':'')+'">'+(row.lastMove?hm(row.lastMove):'—')+'</td>' +
       '<td class="mono'+(row.km<minKm?' bad':'')+'">'+row.km.toFixed(1)+'</td>' +
       '<td class="mono">'+durTxt(row.moveSec)+'</td>' +
-      '<td>'+(row.vios.length ? row.vios.map(v=>'<span class="vio'+(v.warn?' warn':'')+'">'+v.t+'</span>').join('') : '<span style="color:var(--go)">✓</span>')+'</td>';
+      '<td>'+(sv.length ? sv.map(v=>'<span class="vio'+(v.warn?' warn':'')+'">'+v.t+'</span>').join('') : '<span style="color:var(--go)">✓</span>')+'</td>';
     tr.onclick = () => toggleStops(tr, row);
     body.appendChild(tr);
   });
@@ -1854,14 +1863,17 @@ function toggleStops(tr, row){
   const next = tr.nextElementSibling;
   if(next && next.classList.contains('stops-row')){ next.remove(); return; }
   document.querySelectorAll('.stops-row').forEach(e => e.remove());
-  if((!row.stops || !row.stops.length) && (!row.speedEvents || !row.speedEvents.length)) return;
+  const kind = curVioKind();
+  const showStops = !kind || kind === 'stop', showSpd = !kind || kind === 'speed';
+  if(kind && !showStops && !showSpd) return;
+  if((!showStops || !row.stops || !row.stops.length) && (!showSpd || !row.speedEvents || !row.speedEvents.length)) return;
   const ex = document.createElement('tr');
   ex.className = 'stops-row';
-  const stopsHtml = (row.stops||[]).map(st =>
+  const stopsHtml = (!showStops ? [] : (kind ? (row.badStops||[]) : (row.stops||[]))).map(st =>
     '<div class="stop-item">🅿 '+hm(st.from)+' — '+hm(st.to)+' ('+durTxt(st.dur)+')'+(st.lunch?' · обед':'')+
     ' · <a href="https://www.openstreetmap.org/?mlat='+st.lat+'&mlon='+st.lon+'#map=17/'+st.lat+'/'+st.lon+'" target="_blank">место на карте</a></div>'
   ).join('');
-  const spdHtml = (row.speedEvents||[]).map(e =>
+  const spdHtml = (!showSpd ? [] : (row.speedEvents||[])).map(e =>
     '<div class="stop-item">🚨 '+hm(e.from)+(e.to!==e.from?' — '+hm(e.to):'')+' · макс '+Math.round(e.maxS)+' км/ч' +
     ' · <a href="https://www.openstreetmap.org/?mlat='+e.lat+'&mlon='+e.lon+'#map=17/'+e.lat+'/'+e.lon+'" target="_blank">место на карте</a></div>'
   ).join('');
@@ -1875,7 +1887,7 @@ function csvExport(){
   lastRows.filter(vioFilterMatch).forEach(r => {
     csv += [r.name, r.firstMove?hm(r.firstMove):'', r.lastMove?hm(r.lastMove):'',
       r.km.toFixed(1).replace('.',','), durTxt(r.moveSec),
-      r.vios.map(v=>v.t).join(', ')].join(';') + '\n';
+      shownVios(r).map(v=>v.t).join(', ')].join(';') + '\n';
   });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
