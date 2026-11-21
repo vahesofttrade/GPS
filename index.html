@@ -488,6 +488,7 @@
       </select>
       <button class="dbtn" id="dSettings">⚙ Правила</button>
       <button class="dbtn" id="dIndiv">🚗 Индивидуальные</button>
+      <button class="dbtn" id="dSms">📲 SMS при превышении</button>
       <button class="dbtn" id="dCsv" style="display:none">⬇ Excel (CSV)</button>
       <span class="dprog" id="dProg"></span>
       <div class="disc-sum" id="dSum"></div>
@@ -1061,6 +1062,25 @@
 
   <!-- МОДАЛКА: РЕГЛАМЕНТ ТО -->
   <!-- МОДАЛКА: РЕДАКТИРОВАТЬ ЗАМЕНУ МАСЛА -->
+  <div class="overlay" id="smsOverlay">
+    <div class="modal" style="max-width:520px">
+      <button class="close" id="smsClose">✕</button>
+      <h2>📲 SMS при превышении скорости</h2>
+      <div class="fm-row"><label><input type="checkbox" id="smsOn"> Уведомления включены</label></div>
+      <div class="fm-row"><label>Общий лимит скорости, км/ч (индивидуальный лимит машины из «Индивидуальных» имеет приоритет)</label><input type="number" id="smsLimit" min="10" value="90"></div>
+      <div class="fm-row"><label>Допуск, км/ч (слать, только если превышение больше лимита + допуск)</label><input type="number" id="smsTol" min="0" value="0"></div>
+      <div class="fm-row"><label>Не слать повторно по той же машине, минут</label><input type="number" id="smsCool" min="1" value="30"></div>
+      <div class="fm-row"><label><input type="checkbox" id="smsToDriver" checked> Отправлять SMS водителю, который сейчас назначен на машину (телефон берётся из раздела «Водители»)</label></div>
+      <div class="fm-row"><label><input type="checkbox" id="smsToMgr" checked> Отправлять копию руководителю</label></div>
+      <div class="fm-row"><label>Номера руководителя (через запятую, в формате +374…)</label><input type="text" id="smsPhones" placeholder="+37499123456, +37477123456"></div>
+      <button class="btn" id="smsSave">Сохранить</button>
+      <button class="dbtn" id="smsTest" style="width:100%;margin-top:8px;padding:10px">✉ Отправить тестовое сообщение</button>
+      <div id="smsMsg" class="hint" style="margin-top:8px"></div>
+      <div style="margin-top:12px;font-size:12px;font-weight:700">Последние уведомления</div>
+      <div id="smsLog" style="max-height:200px;overflow:auto;font-size:12px;margin-top:4px"></div>
+    </div>
+  </div>
+
   <div class="overlay" id="oilEditOverlay">
     <div class="modal">
       <button class="close" id="oilEditClose">✕</button>
@@ -1069,6 +1089,7 @@
       <div class="fm-row"><label>Дата замены</label><input type="date" id="oilEditDate"></div>
       <div class="fm-row"><label>Интервал замены, км</label><input type="number" id="oilEditInterval" min="1" step="500"></div>
       <button class="btn" id="oilEditSave">Сохранить</button>
+      <button class="dbtn" id="oilEditDel" style="width:100%;margin-top:8px;padding:10px;color:var(--red)">🗑 Удалить запись о замене</button>
     </div>
   </div>
 
@@ -1959,6 +1980,7 @@ $('dRun').onclick = () => runDiscipline();
 $('dPrev').onclick = () => shiftDay(-1);
 $('dNext').onclick = () => shiftDay(1);
 $('dCsv').onclick = csvExport;
+$('dSms').onclick = openSmsSettings;
 $('dVioFilter').onchange = () => { if(lastRows) renderDiscipline(lastRows, lastDate, lastSkipped); };
 $('dSettings').onclick = () => { $('setOverlay').style.display = 'flex'; };
 $('setOverlay').onclick = e => { if(e.target === $('setOverlay')) $('setOverlay').style.display = 'none'; };
@@ -2234,6 +2256,51 @@ async function fuelReport(){
 }
 
 /* ---- отчёт по маслу ---- */
+/* ---- SMS при превышении скорости (сервер: netlify/functions/speed-alerts.mjs) ---- */
+async function openSmsSettings(){
+  if(!dbReady()){ alert('Сначала подключи Supabase'); return; }
+  $('smsMsg').textContent = '';
+  $('smsOverlay').style.display = 'flex';
+  try {
+    const st = (await db('GET', 'alert_settings?id=eq.1'))[0] || {};
+    $('smsOn').checked = !!st.enabled;
+    $('smsLimit').value = st.spd_limit || SET.spdLimit || 90;
+    $('smsTol').value = st.tolerance || 0;
+    $('smsCool').value = st.cooldown_min || 30;
+    $('smsPhones').value = st.phones || '';
+    $('smsToDriver').checked = st.notify_driver !== false;
+    $('smsToMgr').checked = st.notify_manager !== false;
+    const log = await db('GET', 'speed_alerts?select=*&order=alert_time.desc&limit=20');
+    $('smsLog').innerHTML = log.length ? log.map(a =>
+      '<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b>' + a.name + '</b> · ' + a.speed + ' км/ч (лимит ' + a.spd_limit + ') · ' +
+      new Date(a.alert_time).toLocaleString('ru-RU') +
+      (a.result && /ОШИБКА/.test(a.result) ? '<div style="color:var(--red)">' + a.result + '</div>' : '') + '</div>').join('')
+      : '<div style="color:var(--mut)">пока ничего не отправлялось</div>';
+  } catch(e){
+    $('smsMsg').innerHTML = '⚠ Таблицы не созданы: выполни SQL из файла setup.sql в Supabase. (' + e.message + ')';
+  }
+}
+$('smsClose').onclick = () => { $('smsOverlay').style.display = 'none'; };
+$('smsOverlay').onclick = e => { if(e.target === $('smsOverlay')) $('smsOverlay').style.display = 'none'; };
+$('smsSave').onclick = async () => {
+  try {
+    await db('POST', 'alert_settings?on_conflict=id', [{ id:1, enabled:$('smsOn').checked,
+      spd_limit: Math.max(10, +$('smsLimit').value || 90), tolerance: Math.max(0, +$('smsTol').value || 0),
+      cooldown_min: Math.max(1, +$('smsCool').value || 30), phones: $('smsPhones').value.trim(),
+      notify_driver: $('smsToDriver').checked, notify_manager: $('smsToMgr').checked }], 'resolution=merge-duplicates');
+    $('smsMsg').textContent = '✓ Сохранено';
+  } catch(e){ $('smsMsg').textContent = 'Ошибка: ' + e.message; }
+};
+$('smsTest').onclick = async () => {
+  $('smsMsg').textContent = 'отправляю…';
+  try {
+    await $('smsSave').onclick();
+    const r = await fetch('/.netlify/functions/sms-test');
+    const j = await r.json();
+    $('smsMsg').textContent = j.ok ? 'Результат: ' + j.results.join(' | ') : 'Ошибка: ' + j.error;
+  } catch(e){ $('smsMsg').textContent = 'Не удалось вызвать сервер (функция не задеплоена?): ' + e.message; }
+};
+
 let oilEditId = null;
 function openOilEdit(id){
   const c = cars[id]; if(!c) return;
@@ -2257,6 +2324,17 @@ $('oilEditSave').onclick = async () => {
       oil_odo: $('oilEditOdo').value === '' ? null : +$('oilEditOdo').value,
       oil_last_date: $('oilEditDate').value || null
     }], 'resolution=merge-duplicates');
+    $('oilEditOverlay').style.display = 'none';
+    if($('oilView').style.display !== 'none') oilReport();
+    if($('ccOverlay').style.display === 'flex') openCarCard(oilEditId);
+  } catch(e){ alert(e.message); }
+};
+$('oilEditDel').onclick = async () => {
+  const c = cars[oilEditId]; if(!c) return;
+  if(!confirm('Удалить данные о замене масла (пробег и дату) у этой машины?')) return;
+  try {
+    await db('PATCH', 'cars?unit_id=eq.' + oilEditId, { oil_odo: null, oil_last_date: null });
+    c.oil_odo = null; c.oil_last_date = null;
     $('oilEditOverlay').style.display = 'none';
     if($('oilView').style.display !== 'none') oilReport();
     if($('ccOverlay').style.display === 'flex') openCarCard(oilEditId);
