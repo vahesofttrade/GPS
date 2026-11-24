@@ -922,6 +922,8 @@
     <div class="gbar">
       <button class="dbtn prime" id="asgDriverAddBtn">➕ Водитель</button>
       <button class="dbtn prime" id="asgAssignAddBtn">➕ Назначение</button>
+      <button class="dbtn" id="asgPrintCur">🖨 Печать: сейчас за рулём</button>
+      <button class="dbtn" id="asgPrintHist">🖨 Печать: история</button>
       <span class="dprog" id="asgProg"></span>
     </div>
     <div class="gbody" style="padding:16px;overflow:auto">
@@ -2274,7 +2276,7 @@ async function openSmsSettings(){
     $('smsLog').innerHTML = log.length ? log.map(a =>
       '<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b>' + a.name + '</b> · ' + a.speed + ' км/ч (лимит ' + a.spd_limit + ') · ' +
       new Date(a.alert_time).toLocaleString('ru-RU') +
-      (a.result && /ОШИБКА/.test(a.result) ? '<div style="color:var(--red)">' + a.result + '</div>' : '') + '</div>').join('')
+      (a.result ? '<div style="color:' + (/ОШИБКА|нет телефона|не назначен/.test(a.result) ? 'var(--red)' : 'var(--mut)') + '">' + a.result + '</div>' : '') + '</div>').join('')
       : '<div style="color:var(--mut)">пока ничего не отправлялось</div>';
   } catch(e){
     $('smsMsg').innerHTML = '⚠ Таблицы не созданы: выполни SQL из файла setup.sql в Supabase. (' + e.message + ')';
@@ -4742,6 +4744,18 @@ $('pxPrintBtn').onclick = () => {
 /* ================= ВОДИТЕЛИ / ИСТОРИЯ ПЕРЕДАЧИ МАШИН ================= */
 let asgInited = false, asgDrivers = [], asgAssignments = [];
 let asgDriverEditId = null, asgAssignEditId = null;
+function printAsgTable(tableId, title, cols){
+  const rows = [...document.querySelectorAll('#' + tableId + ' tbody tr')]
+    .map(tr => [...tr.children].slice(0, cols).map(td => td.textContent.trim()))
+    .filter(r => r.some(x => x));
+  if(!rows.length){ alert('Нечего печатать'); return; }
+  const heads = [...document.querySelectorAll('#' + tableId + ' thead th')].slice(0, cols).map(th => ({ h: th.textContent.trim() }));
+  printTable({ title, columns: heads, rows, footer: 'Записей: ' + rows.length });
+}
+$('asgPrintCur').onclick = () => printAsgTable('asgCurTable', 'Назначенные машины — сейчас за рулём', 4);
+$('asgPrintHist').onclick = () => printAsgTable('asgHistTable', 'История назначений машин' +
+  ($('asgFrom').value || $('asgTo').value ? ' (' + ($('asgFrom').value || '…') + ' — ' + ($('asgTo').value || '…') + ')' : ''), 5);
+
 const ASG_SQL = 'create table if not exists drivers (id bigint generated always as identity primary key, name text not null, phone text, note text);\n' +
   'alter table drivers enable row level security;\ncreate policy "allow all" on drivers for all using (true) with check (true);\n\n' +
   'create table if not exists assignments (id bigint generated always as identity primary key, unit_id bigint not null, driver_id bigint not null, date_from date not null, date_to date, note text);\n' +
