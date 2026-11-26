@@ -526,7 +526,7 @@
     </div>
     <div class="disc-body">
       <table class="rep" id="dTable" style="display:none">
-        <thead><tr>
+        <thead id="dHead"><tr>
           <th></th><th>ТП / машина</th><th>Выезд</th><th>Возврат</th>
           <th>Км</th><th>В движении</th><th>Нарушения</th>
         </tr></thead>
@@ -1884,7 +1884,7 @@ async function runDiscipline(force){
     let pts = [];
     try { pts = await fetchTrack(units[i].id, date); } catch(e){}
     const eff = effRules(units[i].id);
-    rows.push({ name: units[i].name, indiv: hasIndiv(units[i].id), eff, ...analyzeDay(pts, eff) });
+    rows.push({ id: units[i].id, name: units[i].name, indiv: hasIndiv(units[i].id), eff, ...analyzeDay(pts, eff) });
   }
   $('dProg').textContent = '';
   $('dRun').disabled = false;
@@ -1909,12 +1909,28 @@ function shownVios(row){
   const k = curVioKind();
   return k ? row.vios.filter(v => v.k === k) : row.vios;
 }
+const D_HEAD_FULL = '<tr><th></th><th>ТП / машина</th><th>Выезд</th><th>Возврат</th><th>Км</th><th>В движении</th><th>Нарушения</th></tr>';
+const D_HEAD_COMPACT = '<tr><th></th><th>Номер машины</th><th>Имя</th><th>Нарушение</th></tr>';
+function rowPlate(row){
+  const c = cars[row.id] || {};
+  if(c.plate) return c.plate;
+  const m = String(row.name||'').match(/\d{2,3}\s?[A-Za-z]{2}\s?\d{2,3}/);
+  return m ? m[0].replace(/\s/g,'') : '';
+}
+function rowShortName(row){
+  const pl = rowPlate(row);
+  let n = String(row.name||'');
+  if(pl) n = n.split(pl).join(' ');
+  return n.replace(/\s+/g,' ').trim() || String(row.name||'');
+}
 function renderDiscipline(allRows, date, skipped){
   lastRows = allRows; lastDate = date; lastSkipped = skipped;
   const rows = allRows.filter(vioFilterMatch);
   rows.sort((a,b) => (b.vios.length + (b.noData?9:0)) - (a.vios.length + (a.noData?9:0)));
   const body = $('dBody');
   body.innerHTML = '';
+  const compact = !!curVioKind();
+  $('dHead').innerHTML = compact ? D_HEAD_COMPACT : D_HEAD_FULL;
   let g=0,y=0,r=0;
   rows.forEach((row, idx) => {
     const sv = shownVios(row);
@@ -1923,6 +1939,16 @@ function renderDiscipline(allRows, date, skipped){
     const minKm = row.eff ? row.eff.minKm : SET.minKm;
     const tr = document.createElement('tr');
     tr.className = 'r-row';
+    if(compact){
+      tr.innerHTML =
+        '<td><span class="lamp '+lc+'"></span></td>' +
+        '<td><b>'+(rowPlate(row) || row.name)+'</b></td>' +
+        '<td>'+rowShortName(row)+'</td>' +
+        '<td>'+sv.map(v=>'<span class="vio'+(v.warn?' warn':'')+'">'+v.t+'</span>').join('')+'</td>';
+      tr.onclick = () => toggleStops(tr, row);
+      body.appendChild(tr);
+      return;
+    }
     tr.innerHTML =
       '<td><span class="lamp '+lc+'"></span></td>' +
       '<td><b>'+row.name+'</b>'+(row.indiv?' <span title="действуют индивидуальные правила" style="color:var(--acc);font-size:11px">⚙</span>':'')+'</td>' +
@@ -1962,18 +1988,26 @@ function toggleStops(tr, row){
     '<div class="stop-item">🚨 '+hm(e.from)+(e.to!==e.from?' — '+hm(e.to):'')+' · макс '+Math.round(e.maxS)+' км/ч' +
     ' · <a href="https://www.openstreetmap.org/?mlat='+e.lat+'&mlon='+e.lon+'#map=17/'+e.lat+'/'+e.lon+'" target="_blank">место на карте</a></div>'
   ).join('');
-  ex.innerHTML = '<td colspan="7">' + stopsHtml + spdHtml + '</td>';
+  ex.innerHTML = '<td colspan="' + (curVioKind() ? 4 : 7) + '">' + stopsHtml + spdHtml + '</td>';
   tr.after(ex);
 }
 
 function csvExport(){
   if(!lastRows) return;
-  let csv = '\uFEFFТП;Выезд;Возврат;Км;В движении;Нарушения\n';
-  lastRows.filter(vioFilterMatch).forEach(r => {
-    csv += [r.name, r.firstMove?hm(r.firstMove):'', r.lastMove?hm(r.lastMove):'',
-      r.km.toFixed(1).replace('.',','), durTxt(r.moveSec),
-      shownVios(r).map(v=>v.t).join(', ')].join(';') + '\n';
-  });
+  let csv;
+  if(curVioKind()){
+    csv = '\uFEFFНомер машины;Имя;Нарушение\n';
+    lastRows.filter(vioFilterMatch).forEach(r => {
+      csv += [rowPlate(r), rowShortName(r), shownVios(r).map(v=>v.t).join(', ')].join(';') + '\n';
+    });
+  } else {
+    csv = '\uFEFFТП;Выезд;Возврат;Км;В движении;Нарушения\n';
+    lastRows.filter(vioFilterMatch).forEach(r => {
+      csv += [r.name, r.firstMove?hm(r.firstMove):'', r.lastMove?hm(r.lastMove):'',
+        r.km.toFixed(1).replace('.',','), durTxt(r.moveSec),
+        shownVios(r).map(v=>v.t).join(', ')].join(';') + '\n';
+    });
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
   a.download = 'дисциплина_' + lastDate + '.csv';
