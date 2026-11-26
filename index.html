@@ -380,7 +380,38 @@
       <div id="map"></div>
       <button class="dbtn" id="trafficBtn" style="position:absolute;top:10px;left:56px;z-index:600" title="Открыть это место в Яндекс.Картах со слоем пробок">🚦 Пробки</button>
       <button class="dbtn" id="playerOpenBtn" style="position:absolute;top:10px;right:10px;z-index:600">🎬 Плеер трека</button>
+      <button class="dbtn" id="hzOpenBtn" style="position:absolute;top:10px;right:150px;z-index:600">🏠 Зона дома</button>
       <div class="refresh-note" id="refreshNote">обновление…</div>
+
+      <!-- ЗОНА ДОМА -->
+      <div class="player-setup" id="hzPanel" style="width:310px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <b style="font-size:14px">🏠 Зона дома</b>
+          <button class="player-close" id="hzClose">✕</button>
+        </div>
+        <div class="fm-row" style="margin:8px 0"><label>Машина</label><select id="hzCar"></select></div>
+        <div class="fm-row" style="margin:8px 0"><label>Дата трека для таймера</label><input type="date" id="hzDate"></div>
+        <button class="dbtn" id="hzLoad" style="width:100%">🎬 Загрузить трек и включить таймер</button>
+        <div style="font-size:11.5px;color:var(--mut);margin:6px 0">Двигай ползунок времени внизу до места дома и нажми «Дом здесь». Или укажи точку кликом по карте.</div>
+        <div style="display:flex;gap:6px">
+          <button class="dbtn" id="hzHere" style="flex:1;font-size:12px">📍 Дом здесь</button>
+          <button class="dbtn" id="hzPick" style="flex:1;font-size:12px">🖱 Клик по карте</button>
+        </div>
+        <div class="fm-row" style="margin:8px 0"><label>Радиус зоны, м</label><input type="number" id="hzRadius" min="20" step="10" value="150"></div>
+        <div id="hzPicked" style="font-size:12px;color:var(--dim);margin-bottom:6px"></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn" id="hzSave" style="margin:0;flex:1">💾 Сохранить дом</button>
+          <button class="dbtn" id="hzClear" style="color:var(--red)">🗑</button>
+        </div>
+        <div style="height:1px;background:var(--line);margin:12px 0"></div>
+        <b style="font-size:13px">📋 Отчёт: когда была в зоне</b>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <div class="fm-row" style="margin:0;flex:1"><label>С</label><input type="date" id="hzFrom"></div>
+          <div class="fm-row" style="margin:0;flex:1"><label>По</label><input type="date" id="hzTo"></div>
+        </div>
+        <button class="btn" id="hzReport" style="margin-top:8px">Сформировать отчёт</button>
+        <div id="hzProg" style="font-size:12px;color:var(--mut);margin-top:6px"></div>
+      </div>
 
       <!-- ПЛЕЕР ТРЕКА: настройка -->
       <div class="player-setup" id="playerSetup">
@@ -1083,6 +1114,23 @@
     </div>
   </div>
 
+  <div class="overlay" id="hzRepOverlay">
+    <div class="modal" style="max-width:640px">
+      <button class="close" id="hzRepClose">✕</button>
+      <h2 id="hzRepTitle">🏠 Зона дома</h2>
+      <div id="hzRepSub" class="hint" style="margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="dbtn" id="hzRepPrint">🖨 Печать / PDF</button>
+        <button class="dbtn" id="hzRepCsv">⬇ Excel (CSV)</button>
+      </div>
+      <table class="rep" id="hzRepTable">
+        <thead><tr><th>№</th><th>Приехал</th><th>Уехал</th><th>Был в зоне</th></tr></thead>
+        <tbody id="hzRepBody"></tbody>
+      </table>
+      <div id="hzRepEmpty" style="padding:12px 0;color:var(--mut);font-size:13px;display:none"></div>
+    </div>
+  </div>
+
   <div class="overlay" id="oilEditOverlay">
     <div class="modal">
       <button class="close" id="oilEditClose">✕</button>
@@ -1288,7 +1336,7 @@ function initMap(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap'
   }).addTo(map);
-  map.on('click', e => { if(typeof mapPickClick === 'function') mapPickClick(e); });
+  map.on('click', e => { if(typeof mapPickClick === 'function') mapPickClick(e); if(typeof hzMapClick === 'function') hzMapClick(e); });
 }
 
 /* ---- мобильный тумблер списка машин ---- */
@@ -1304,6 +1352,7 @@ let playerData = {}; // unitId -> {pts, color, marker, fullLine, travelLine}
 let playerRangeStart = 0, playerRangeEnd = 0, playerCurT = 0, playerSpeed = 15, playerLastTick = 0;
 
 $('playerOpenBtn').onclick = () => {
+  if($('hzPanel')) $('hzPanel').style.display = 'none';
   $('playerDate').value = $('playerDate').value || todayLocal();
   $('playerVehList').innerHTML = units.map(u =>
     '<label class="player-veh-item"><input type="checkbox" class="pvcb" value="'+u.id+'" checked> '+u.name+
@@ -4466,6 +4515,153 @@ $('pxZoneSave').onclick = async () => {
     $('pxZoneName').value = ''; $('pxZonePicked').textContent = ''; pxPicked = null;
     loadZones();
   } catch(e){ alert(e.message); }
+};
+
+
+/* ================= ЗОНА ДОМА НА КАРТЕ: таймер, радиус, отчёт ================= */
+let hzCenter = null, hzCircle = null, hzPickOn = false, hzLast = null;
+function hzRadius(){ return Math.max(20, +$('hzRadius').value || 150); }
+function hzDraw(fit){
+  if(hzCircle){ map.removeLayer(hzCircle); hzCircle = null; }
+  if(!hzCenter){ $('hzPicked').textContent = ''; return; }
+  hzCircle = L.circle([hzCenter.lat, hzCenter.lon], { radius: hzRadius(), color:'#e0546b', weight:2, fillColor:'#e0546b', fillOpacity:.15 }).addTo(map);
+  $('hzPicked').textContent = '📍 ' + hzCenter.lat.toFixed(5) + ', ' + hzCenter.lon.toFixed(5) + ' · радиус ' + hzRadius() + ' м';
+  if(fit) map.fitBounds(hzCircle.getBounds(), { maxZoom:17, padding:[40,40] });
+}
+function hzLoadSaved(){
+  const id = +$('hzCar').value, c = cars[id] || {};
+  if(c.home_lat != null){
+    hzCenter = { lat:+c.home_lat, lon:+c.home_lon };
+    $('hzRadius').value = c.home_radius || 150;
+    hzDraw(true);
+  } else { hzCenter = null; $('hzRadius').value = 150; hzDraw(); }
+}
+$('hzOpenBtn').onclick = async () => {
+  $('playerSetup').style.display = 'none';
+  try { await loadCars(); } catch(e){}
+  $('hzCar').innerHTML = garageUnits().map(g => '<option value="'+g.id+'">'+((cars[g.id]||{}).plate || g.name)+'</option>').join('');
+  const t = todayLocal();
+  $('hzDate').value = $('hzDate').value || t;
+  if(!$('hzTo').value) $('hzTo').value = t;
+  if(!$('hzFrom').value){ const d = new Date(); d.setDate(d.getDate()-6); $('hzFrom').value = fmtLocal(d); }
+  $('hzPanel').style.display = 'block';
+  hzLoadSaved();
+};
+$('hzCar').onchange = hzLoadSaved;
+$('hzClose').onclick = () => {
+  $('hzPanel').style.display = 'none'; hzPickOn = false;
+  if(hzCircle){ map.removeLayer(hzCircle); hzCircle = null; }
+};
+$('hzRadius').oninput = () => hzDraw();
+function hzMapClick(e){
+  if(!hzPickOn) return;
+  hzPickOn = false; $('hzPick').textContent = '🖱 Клик по карте';
+  hzCenter = { lat:e.latlng.lat, lon:e.latlng.lng };
+  hzDraw();
+}
+$('hzPick').onclick = () => {
+  hzPickOn = !hzPickOn;
+  $('hzPick').textContent = hzPickOn ? '👆 Кликни на карте…' : '🖱 Клик по карте';
+};
+$('hzLoad').onclick = async () => {
+  const id = +$('hzCar').value, date = $('hzDate').value;
+  if(!id || !date){ alert('Выбери машину и дату'); return; }
+  $('playerDate').value = date;
+  $('playerVehList').innerHTML = '<label class="player-veh-item"><input type="checkbox" class="pvcb" value="'+id+'" checked></label>';
+  $('hzProg').textContent = 'загрузка трека…';
+  await $('playerLoadBtn').onclick();
+  if(playerData[id]){
+    $('hzProg').textContent = 'Двигай ползунок внизу и жми «Дом здесь».';
+    if(hzCenter) hzDraw();
+  } else {
+    $('hzProg').textContent = $('playerSetupProg').textContent || 'Нет данных трека за эту дату.';
+  }
+};
+$('hzHere').onclick = () => {
+  const id = +$('hzCar').value, d = playerData[id];
+  if(!d){ alert('Сначала загрузи трек и выбери время ползунком'); return; }
+  const p = interpAt(d.pts, playerCurT);
+  hzCenter = { lat:p.lat, lon:p.lon };
+  hzDraw(true);
+};
+async function hzUpsertHome(id, lat, lon, radius){
+  const c = cars[id] || {}, u = units.find(x => x.id === id);
+  await db('POST', 'cars?on_conflict=unit_id', [{
+    unit_id:id, name:u?u.name:c.name, is_manual:c.is_manual||false, brand:c.brand||'', plate:c.plate||'',
+    fuel:c.fuel||'бензин', norm:c.norm||10, odo_value:c.odo_value, odo_date:c.odo_date,
+    oil_interval:c.oil_interval, oil_odo:c.oil_odo, oil_last_date:c.oil_last_date,
+    home_lat:lat, home_lon:lon, home_radius:radius
+  }], 'resolution=merge-duplicates');
+  await loadCars(true);
+}
+$('hzSave').onclick = async () => {
+  if(!hzCenter){ alert('Сначала укажи точку дома'); return; }
+  try {
+    await hzUpsertHome(+$('hzCar').value, hzCenter.lat, hzCenter.lon, hzRadius());
+    $('hzProg').textContent = '✓ Дом сохранён';
+  } catch(e){ alert(e.message + ' — возможно, нужно добавить колонки: alter table cars add column if not exists home_lat double precision, add column if not exists home_lon double precision, add column if not exists home_radius integer;'); }
+};
+$('hzClear').onclick = async () => {
+  if(!confirm('Убрать дом у этой машины?')) return;
+  try {
+    await hzUpsertHome(+$('hzCar').value, null, null, null);
+    hzCenter = null; hzDraw(); $('hzProg').textContent = 'Дом удалён';
+  } catch(e){ alert(e.message); }
+};
+$('hzReport').onclick = async () => {
+  const id = +$('hzCar').value;
+  if(!hzCenter){ alert('Сначала задай зону дома (точка и радиус)'); return; }
+  const from = $('hzFrom').value, to = $('hzTo').value;
+  if(!from || !to || from > to){ alert('Проверь даты отчёта'); return; }
+  const days = [];
+  for(let d = new Date(from+'T00:00:00'); fmtLocal(d) <= to; d.setDate(d.getDate()+1)) days.push(fmtLocal(d));
+  if(days.length > 31){ alert('Максимум 31 день за один отчёт'); return; }
+  const center = { lat:hzCenter.lat, lon:hzCenter.lon }, R = hzRadius();
+  let all = [], errs = 0;
+  for(let i=0;i<days.length;i++){
+    $('hzProg').textContent = 'трек ' + (i+1) + '/' + days.length + '…';
+    try { all = all.concat(await fetchTrack(id, days[i])); } catch(e){ errs++; }
+  }
+  $('hzProg').textContent = '';
+  all.sort((a,b) => a.t - b.t);
+  const segs = []; let seg = null;
+  for(const p of all){
+    const inside = hav(p, center) * 1000 <= R;
+    if(inside){ if(!seg) seg = { from:p.t, last:p.t }; else seg.last = p.t; }
+    else if(seg){ seg.to = p.t; segs.push(seg); seg = null; }
+  }
+  if(seg){ seg.to = seg.last; seg.open = true; segs.push(seg); }
+  const plate = (cars[id] && cars[id].plate) || (units.find(u => u.id === id)||{}).name || id;
+  const total = segs.reduce((s,x) => s + (x.to - x.from), 0);
+  hzLast = { plate, from, to, R, segs };
+  $('hzRepTitle').textContent = '🏠 ' + plate + ' — в зоне дома';
+  $('hzRepSub').textContent = from + ' — ' + to + ' · радиус ' + R + ' м · заходов: ' + segs.length + ' · всего в зоне: ' + durTxt(total) +
+    (errs ? ' · ⚠ не загружено дней: ' + errs : '') + ' · «Уехал» — первая точка трека вне зоны';
+  $('hzRepBody').innerHTML = segs.map((x,i) =>
+    '<tr><td>'+(i+1)+'</td><td class="mono">'+fullDT(x.from)+'</td><td class="mono">'+(x.open ? 'ещё в зоне / до конца данных' : fullDT(x.to))+'</td><td class="mono">'+(x.to - x.from < 60 ? '< 1м' : durTxt(x.to - x.from))+'</td></tr>').join('');
+  $('hzRepTable').style.display = segs.length ? 'table' : 'none';
+  $('hzRepEmpty').style.display = segs.length ? 'none' : 'block';
+  $('hzRepEmpty').textContent = all.length ? 'За выбранный период машина не заезжала в зону.' : 'Нет данных трека за выбранный период.';
+  $('hzRepOverlay').style.display = 'flex';
+};
+$('hzRepClose').onclick = () => { $('hzRepOverlay').style.display = 'none'; };
+$('hzRepOverlay').onclick = e => { if(e.target === $('hzRepOverlay')) $('hzRepOverlay').style.display = 'none'; };
+function hzRepRows(){
+  return hzLast.segs.map((x,i) => [i+1, fullDT(x.from), x.open ? 'ещё в зоне / до конца данных' : fullDT(x.to), (x.to - x.from < 60 ? '< 1м' : durTxt(x.to - x.from))]);
+}
+$('hzRepPrint').onclick = () => {
+  if(!hzLast) return;
+  printTable({ title: 'Зона дома — ' + hzLast.plate + ' (' + hzLast.from + ' — ' + hzLast.to + ', радиус ' + hzLast.R + ' м)',
+    columns:[{h:'№'},{h:'Приехал'},{h:'Уехал'},{h:'Был в зоне'}], rows: hzRepRows(),
+    footer:'Заходов: ' + hzLast.segs.length + ' · «Уехал» — первая точка трека вне зоны' });
+};
+$('hzRepCsv').onclick = () => {
+  if(!hzLast) return;
+  let csv = '﻿№;Приехал;Уехал;Был в зоне\n' + hzRepRows().map(r => r.join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+  a.download = 'зона_дома_' + hzLast.plate + '_' + hzLast.from + '.csv';
+  a.click();
 };
 
 /* ---- дом машины ---- */
