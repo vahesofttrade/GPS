@@ -243,6 +243,84 @@
   .player-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--dim)}
   .player-legend span{display:flex;align-items:center;gap:4px}
   .player-legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+
+  /* ================= АДАПТИВ: телефоны, планшеты, ноутбуки, большие экраны ================= */
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  img,canvas,svg{max-width:100%}
+  .disc-bar select{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:13px;padding:8px 10px}
+  .modal .rep{display:block;overflow-x:auto;max-width:100%}
+  .fm-row label input[type=checkbox]{width:auto;margin:0 8px 0 0;vertical-align:middle}
+  /* планшеты и узкие ноутбуки: вкладки — одна строка с прокруткой, а не вылезают за экран */
+  @media(min-width:761px){
+    header{min-width:0}
+    header .tabs{flex:1 1 auto;min-width:0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin}
+    header .tab{white-space:nowrap;flex-shrink:0}
+    #hzPanel{width:310px}
+  }
+  @media(min-width:761px) and (max-width:1100px){
+    .side{width:260px}
+    .dash-grid{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+    .detail{max-width:300px}
+    .player-bar{left:10px;right:10px}
+  }
+  /* большие экраны: карточки дашборда не растягиваются бесконечно */
+  @media(min-width:1700px){
+    .dash-grid{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+    .side{width:360px}
+  }
+  /* телефоны */
+  @media(max-width:760px){
+    header{padding:8px 12px;gap:10px}
+    /* кнопки на карте — одна аккуратная строка под строкой поиска */
+    #trafficBtn{left:10px !important;top:62px !important}
+    #hzOpenBtn{left:104px !important;right:auto !important;top:62px !important}
+    #playerOpenBtn{right:10px !important;top:62px !important}
+    #trafficBtn,#hzOpenBtn,#playerOpenBtn{font-size:12px;padding:8px 10px}
+    .refresh-note{top:104px !important}
+    .player-setup{top:106px;max-height:calc(100dvh - 130px);max-height:calc(var(--vh,1vh)*100 - 130px)}
+    #hzPanel{width:auto}
+    .player-bar{bottom:calc(8px + env(safe-area-inset-bottom,0px))}
+    .detail{bottom:calc(8px + env(safe-area-inset-bottom,0px))}
+    /* панели фильтров */
+    .gbar,.disc-bar{padding:10px 12px;gap:8px}
+    .gbar input[type=date],.disc-bar input[type=date],.gbar select,.disc-bar select{flex:1 1 130px;min-width:0}
+    .gbar .dbtn,.disc-bar .dbtn{flex:1 1 auto}
+    .dprog,.disc-sum{width:100%}
+    /* окна */
+    .overlay{padding:10px;align-items:flex-start;overflow-y:auto}
+    .modal{padding:18px 14px;max-height:none;margin:auto 0;max-width:100% !important}
+    .modal [style*="display:flex"]{flex-wrap:wrap}
+    .modal .fm-row{min-width:0}
+    /* поля не зумятся на iPhone (16px) и удобны для пальца */
+    .inp,.fm-row input,.fm-row select,.fm-row textarea,.gbar input,.gbar select,.disc-bar input,.disc-bar select,.search{font-size:16px}
+    .dbtn,.btn,.tab,.mn-card-edit,.mn-card-del{min-height:40px}
+    .dbtn{padding:9px 12px}
+    /* дашборд и списки */
+    .dash-grid{grid-template-columns:minmax(0,1fr);padding:10px;gap:10px}
+    .dcard{padding:14px}
+    .dnum .v{font-size:22px}
+    .rq-folder{margin:10px 8px 0}
+    .rq-item{flex-wrap:wrap}
+    .gbody{padding-left:0;padding-right:0}
+    .disc-body,.gbody{-webkit-overflow-scrolling:touch}
+    table.rep{font-size:12.5px}
+    .rep th,.rep td{padding:9px 9px}
+    .ditem{flex-wrap:wrap}
+    .ditem .info{white-space:normal;text-align:left}
+  }
+  @media(max-width:380px){
+    .logo{font-size:14px}
+    #hzOpenBtn{left:96px !important}
+    #trafficBtn,#hzOpenBtn,#playerOpenBtn{padding:8px 8px}
+    .det-actions{flex-wrap:wrap}
+  }
+  /* телефон в горизонтальном положении: низкая высота */
+  @media(max-height:520px) and (orientation:landscape){
+    header{padding:4px 12px}
+    .detail{max-height:calc(100dvh - 20px);overflow:auto}
+    .player-setup{max-height:calc(100dvh - 70px)}
+    .modal{max-height:none}
+  }
 </style>
 </head>
 <body>
@@ -384,7 +462,7 @@
       <div class="refresh-note" id="refreshNote">обновление…</div>
 
       <!-- ЗОНА ДОМА -->
-      <div class="player-setup" id="hzPanel" style="width:310px">
+      <div class="player-setup" id="hzPanel">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <b style="font-size:14px">🏠 Зона дома</b>
           <button class="player-close" id="hzClose">✕</button>
