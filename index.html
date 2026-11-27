@@ -248,6 +248,7 @@
   html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   img,canvas,svg{max-width:100%}
   .disc-bar select{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:13px;padding:8px 10px}
+  .main{position:relative}
   .modal .rep{display:block;overflow-x:auto;max-width:100%}
   .fm-row label input[type=checkbox]{width:auto;margin:0 8px 0 0;vertical-align:middle}
   /* планшеты и узкие ноутбуки: вкладки — одна строка с прокруткой, а не вылезают за экран */
@@ -320,6 +321,24 @@
     .detail{max-height:calc(100dvh - 20px);overflow:auto}
     .player-setup{max-height:calc(100dvh - 70px)}
     .modal{max-height:none}
+  }
+
+  /* ===== меню: на экранах до 1100px — кнопка ☰ и выпадающий список под надписью «ТП Мониторинг» ===== */
+  @media(max-width:1800px){
+    header{position:relative}
+    header .nav-toggle{display:flex}
+    header .nav-close{display:none}
+    header .tabs{display:none;position:absolute;top:calc(100% + 4px);left:8px;right:auto;bottom:auto;
+      width:min(300px,calc(100vw - 16px));max-width:none;margin:0;padding:8px;
+      max-height:calc(100dvh - 70px);max-height:calc(var(--vh,1vh)*100 - 70px);overflow-y:auto;overflow-x:hidden;
+      flex:none;flex-direction:column;flex-wrap:nowrap;gap:2px;
+      background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(22,32,44,.22);z-index:2000}
+    header .tabs.mob-open{display:flex}
+    header .tab{width:100%;text-align:left;border-radius:8px;padding:12px 14px;font-size:14px;min-height:44px}
+    header .tab.on{background:var(--acc);color:#fff}
+    .nav-backdrop{position:fixed;inset:0;background:rgba(22,32,44,.35);z-index:1900}
+    .nav-backdrop:not(.mob-open){display:none}
+    .nav-backdrop.mob-open{display:block}
   }
 </style>
 </head>
