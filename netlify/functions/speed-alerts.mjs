@@ -58,10 +58,10 @@ export async function sendAll(phones, text){
 
 const SB_URL = () => process.env.SUPABASE_URL || 'https://chwedslmzuekjjxsdlqv.supabase.co';
 const SB_KEY = () => process.env.SUPABASE_KEY || 'sb_publishable_DomiPemi0w2qxjMiK7kvyQ_c-y20Eoc';
-export async function sb(method, path, body){
+export async function sb(method, path, body, prefer){
   const r = await fetch(SB_URL() + '/rest/v1/' + path, {
     method,
-    headers:{ apikey: SB_KEY(), Authorization:'Bearer ' + SB_KEY(), 'Content-Type':'application/json', Prefer:'return=representation' },
+    headers:{ apikey: SB_KEY(), Authorization:'Bearer ' + SB_KEY(), 'Content-Type':'application/json', Prefer: prefer || 'return=representation' },
     body: body ? JSON.stringify(body) : undefined
   });
   const t = await r.text();
@@ -69,8 +69,15 @@ export async function sb(method, path, body){
   return t ? JSON.parse(t) : [];
 }
 export function normPhones(s){
-  return String(s || '').split(/[,;\s]+/).map(x => x.trim()).filter(Boolean)
-    .map(x => x.startsWith('+') ? x : (x.startsWith('00') ? '+' + x.slice(2) : '+' + x));
+  /* приводит номера к +374XXXXXXXX: понимает 093767123, 93767123, 37493767123, +374 93 767123, 0037493767123 */
+  return String(s || '').split(/[,;]+/).map(x => x.replace(/[^\d+]/g,'')).filter(Boolean).map(x => {
+    if(x.startsWith('+')) return x;
+    if(x.startsWith('00')) return '+' + x.slice(2);
+    if(x.startsWith('374')) return '+' + x;
+    if(x.startsWith('0') && x.length === 9) return '+374' + x.slice(1);
+    if(x.length === 8) return '+374' + x;
+    return '+' + x;
+  });
 }
 
 /* ---- функция ---- */
@@ -86,6 +93,11 @@ async function wcall(svc, params, sid){
   const j = await r.json();
   if(j && j.error) throw new Error('Wialon ' + svc + ' error ' + j.error);
   return j;
+}
+function distM(lat1, lon1, lat2, lon2){
+  const R = 6371000, r = x => x*Math.PI/180;
+  const a = Math.sin(r(lat2-lat1)/2)**2 + Math.cos(r(lat1))*Math.cos(r(lat2))*Math.sin(r(lon2-lon1)/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
 }
 const hm = ts => new Date(ts*1000).toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', timeZone:'Asia/Yerevan' });
 
@@ -113,7 +125,7 @@ export default async () => {
     return a ? drivers[a.driver_id] : null;
   };
 
-  const carsArr = await sb('GET', 'cars?select=unit_id,plate,name,r_spdlimit,hidden,r_skip&limit=1000').catch(() => []);
+  const carsArr = await sb('GET', 'cars?select=unit_id,plate,name,r_spdlimit,hidden,r_skip,home_lat,home_lon,home_radius&limit=1000').catch(() => []);
   const cars = {}; carsArr.forEach(c => cars[c.unit_id] = c);
 
   const login = await wcall('token/login', { token });
@@ -125,7 +137,7 @@ export default async () => {
     }, sid);
     const now = Math.floor(Date.now()/1000);
     const since = new Date(Date.now() - (st.cooldown_min || 30)*60000).toISOString();
-    const recent = await sb('GET', 'speed_alerts?select=unit_id&alert_time=gte.' + since + '&limit=1000').catch(() => []);
+    const recent = await sb('GET', 'speed_alerts?select=unit_id&speed=not.is.null&alert_time=gte.' + since + '&limit=1000').catch(() => []);
     const cooling = new Set(recent.map(r => r.unit_id));
     const tol = +st.tolerance || 0;
     let sent = 0;
@@ -158,6 +170,55 @@ export default async () => {
       cooling.add(u.id); sent++;
     }
     console.log('проверено', (res.items||[]).length, 'машин, отправлено', sent);
+
+    /* ---------- заезд в зону дома в рабочее время ---------- */
+    if(st.home_enabled !== false){
+      try {
+        const wf = (st.work_from || '09:00'), wt = (st.work_to || '18:00');
+        const toMin = t => { const [h,m] = String(t).split(':'); return (+h)*60 + (+m||0); };
+        const ye = new Date(Date.now() + 4*3600*1000);           // время Еревана (UTC+4)
+        const nowMin = ye.getUTCHours()*60 + ye.getUTCMinutes();
+        const dow = ye.getUTCDay();                                // 0 = вс, 6 = сб
+        const workTime = nowMin >= toMin(wf) && nowMin <= toMin(wt) && !(st.work_weekdays !== false && (dow === 0 || dow === 6));
+
+        const stateRows = await sb('GET', 'home_state?select=*&limit=2000');   // если таблицы нет — уйдём в catch, без спама
+        const state = {}; stateRows.forEach(r => state[r.unit_id] = r.inside);
+        const homeSince = new Date(Date.now() - (st.cooldown_min || 30)*60000).toISOString();
+        const homeRecent = await sb('GET', 'speed_alerts?select=unit_id&speed=is.null&alert_time=gte.' + homeSince + '&limit=1000');
+        const homeCool = new Set(homeRecent.map(r => r.unit_id));
+        const changes = []; let hsent = 0;
+
+        for(const u of (res.items || [])){
+          const c = cars[u.id] || {};
+          if(c.hidden || c.home_lat == null || c.home_lon == null) continue;
+          const p = u.pos;
+          if(!p || now - p.t > 600) continue;
+          const inside = distM(p.y, p.x, +c.home_lat, +c.home_lon) <= (+c.home_radius || 150);
+          const prev = state[u.id];
+          if(prev === undefined || prev !== inside) changes.push({ unit_id:u.id, inside, changed_at:new Date().toISOString() });
+          if(prev === false && inside && workTime && !homeCool.has(u.id)){
+            const label = (c.plate ? c.plate + ' ' : '') + (c.name || u.nm);
+            const drv = toDriver ? driverOf(u.id) : null;
+            const drvPhones = drv ? normPhones(drv.phone) : [];
+            const results = [];
+            if(drvPhones.length){
+              const t = `Вы заехали в зону дома в рабочее время (${hm(p.t)}), ${label}. Рабочее время ${wf}–${wt}.`;
+              (await sendAll(drvPhones, t)).forEach(r => results.push('водитель ' + r));
+            } else if(toDriver){
+              results.push(drv ? 'у водителя ' + drv.name + ' нет телефона' : 'на машину не назначен водитель');
+            }
+            if(mgrPhones.length){
+              const t = `Дом в рабочее время: ${label}${drv ? ' (' + drv.name + ')' : ''} заехал в зону дома в ${hm(p.t)} (раб. время ${wf}–${wt}). https://maps.google.com/?q=${p.y},${p.x}`;
+              (await sendAll(mgrPhones, t)).forEach(r => results.push('руководитель ' + r));
+            }
+            await sb('POST', 'speed_alerts', [{ unit_id:u.id, name:label + (drv ? ' · ' + drv.name : ''), speed:null, spd_limit:null, lat:p.y, lon:p.x, result:results.join(' | ').slice(0,500) }]);
+            homeCool.add(u.id); hsent++;
+          }
+        }
+        if(changes.length) await sb('POST', 'home_state?on_conflict=unit_id', changes, 'resolution=merge-duplicates,return=minimal');
+        console.log('дом: изменений', changes.length, 'уведомлений', hsent, 'рабочее время', workTime);
+      } catch(e){ console.error('проверка дома пропущена:', e.message); }
+    }
   } finally {
     try { await wcall('core/logout', {}, sid); } catch(e){}
   }

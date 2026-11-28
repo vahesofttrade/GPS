@@ -69,8 +69,15 @@ export async function sb(method, path, body){
   return t ? JSON.parse(t) : [];
 }
 export function normPhones(s){
-  return String(s || '').split(/[,;\s]+/).map(x => x.trim()).filter(Boolean)
-    .map(x => x.startsWith('+') ? x : (x.startsWith('00') ? '+' + x.slice(2) : '+' + x));
+  /* приводит номера к +374XXXXXXXX: понимает 093767123, 93767123, 37493767123, +374 93 767123, 0037493767123 */
+  return String(s || '').split(/[,;]+/).map(x => x.replace(/[^\d+]/g,'')).filter(Boolean).map(x => {
+    if(x.startsWith('+')) return x;
+    if(x.startsWith('00')) return '+' + x.slice(2);
+    if(x.startsWith('374')) return '+' + x;
+    if(x.startsWith('0') && x.length === 9) return '+374' + x.slice(1);
+    if(x.length === 8) return '+374' + x;
+    return '+' + x;
+  });
 }
 
 /* ---- функция ---- */
