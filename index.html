@@ -1202,6 +1202,14 @@
       <div class="fm-row"><label>Не слать повторно по той же машине, минут</label><input type="number" id="smsCool" min="1" value="30"></div>
       <div class="fm-row"><label><input type="checkbox" id="smsToDriver" checked> Отправлять SMS водителю, который сейчас назначен на машину (телефон берётся из раздела «Водители»)</label></div>
       <div class="fm-row"><label><input type="checkbox" id="smsToMgr" checked> Отправлять копию руководителю</label></div>
+      <div style="height:1px;background:var(--line);margin:10px 0"></div>
+      <div class="fm-row"><label><input type="checkbox" id="smsHomeOn" checked> 🏠 Уведомлять, когда машина заехала в зону дома в рабочее время</label></div>
+      <div style="display:flex;gap:8px">
+        <div class="fm-row" style="flex:1"><label>Рабочее время с</label><input type="time" id="smsWFrom" value="09:00"></div>
+        <div class="fm-row" style="flex:1"><label>до</label><input type="time" id="smsWTo" value="18:00"></div>
+      </div>
+      <div class="fm-row"><label><input type="checkbox" id="smsWeekdays" checked> Только по будням (пн–пт)</label></div>
+      <div style="height:1px;background:var(--line);margin:10px 0"></div>
       <div class="fm-row"><label>Номера руководителя (через запятую, в формате +374…)</label><input type="text" id="smsPhones" placeholder="+37499123456, +37477123456"></div>
       <button class="btn" id="smsSave">Сохранить</button>
       <button class="dbtn" id="smsTest" style="width:100%;margin-top:8px;padding:10px">✉ Отправить тестовое сообщение</button>
@@ -1865,7 +1873,7 @@ $('loginBtn').onclick = async () => {
 };
 
 /* ================= ДИСЦИПЛИНА ================= */
-const SET = { start:'09:30', end:'17:00', minKm:30, stopMin:60, lunchMin:70, spdThr:3, spdLimit:90 };
+const SET = { workFrom:'09:00', workTo:'18:00', start:'09:30', end:'17:00', minKm:30, stopMin:60, lunchMin:70, spdThr:3, spdLimit:90 };
 const dayCache = {};           // 'YYYY-MM-DD' -> rows
 let lastRows = null, lastDate = null, dRunning = false;
 
@@ -2439,6 +2447,14 @@ async function fuelReport(){
 
 /* ---- отчёт по маслу ---- */
 /* ---- SMS при превышении скорости (сервер: netlify/functions/speed-alerts.mjs) ---- */
+async function syncWorkHours(){
+  try {
+    const st = (await db('GET', 'alert_settings?id=eq.1'))[0];
+    if(st && st.work_from) SET.workFrom = st.work_from;
+    if(st && st.work_to) SET.workTo = st.work_to;
+  } catch(e){}
+}
+setTimeout(syncWorkHours, 4000);
 async function openSmsSettings(){
   if(!dbReady()){ alert('Сначала подключи Supabase'); return; }
   $('smsMsg').textContent = '';
@@ -2452,9 +2468,14 @@ async function openSmsSettings(){
     $('smsPhones').value = st.phones || '';
     $('smsToDriver').checked = st.notify_driver !== false;
     $('smsToMgr').checked = st.notify_manager !== false;
+    $('smsHomeOn').checked = st.home_enabled !== false;
+    $('smsWFrom').value = st.work_from || '09:00';
+    $('smsWTo').value = st.work_to || '18:00';
+    $('smsWeekdays').checked = st.work_weekdays !== false;
+    SET.workFrom = $('smsWFrom').value; SET.workTo = $('smsWTo').value;
     const log = await db('GET', 'speed_alerts?select=*&order=alert_time.desc&limit=20');
     $('smsLog').innerHTML = log.length ? log.map(a =>
-      '<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b>' + a.name + '</b> · ' + a.speed + ' км/ч (лимит ' + a.spd_limit + ') · ' +
+      '<div style="padding:4px 0;border-bottom:1px solid var(--line)"><b>' + a.name + '</b> · ' + (a.speed == null ? '🏠 заехал в зону дома' : a.speed + ' км/ч (лимит ' + a.spd_limit + ')') + ' · ' +
       new Date(a.alert_time).toLocaleString('ru-RU') +
       (a.result ? '<div style="color:' + (/ОШИБКА|нет телефона|не назначен/.test(a.result) ? 'var(--red)' : 'var(--mut)') + '">' + a.result + '</div>' : '') + '</div>').join('')
       : '<div style="color:var(--mut)">пока ничего не отправлялось</div>';
@@ -2469,7 +2490,9 @@ $('smsSave').onclick = async () => {
     await db('POST', 'alert_settings?on_conflict=id', [{ id:1, enabled:$('smsOn').checked,
       spd_limit: Math.max(10, +$('smsLimit').value || 90), tolerance: Math.max(0, +$('smsTol').value || 0),
       cooldown_min: Math.max(1, +$('smsCool').value || 30), phones: $('smsPhones').value.trim(),
-      notify_driver: $('smsToDriver').checked, notify_manager: $('smsToMgr').checked }], 'resolution=merge-duplicates');
+      notify_driver: $('smsToDriver').checked, notify_manager: $('smsToMgr').checked,
+      home_enabled: $('smsHomeOn').checked, work_from: $('smsWFrom').value || '09:00', work_to: $('smsWTo').value || '18:00', work_weekdays: $('smsWeekdays').checked }], 'resolution=merge-duplicates');
+    SET.workFrom = $('smsWFrom').value || '09:00'; SET.workTo = $('smsWTo').value || '18:00';
     $('smsMsg').textContent = '✓ Сохранено';
   } catch(e){ $('smsMsg').textContent = 'Ошибка: ' + e.message; }
 };
@@ -3933,14 +3956,60 @@ async function dashReport(){
         ? over.slice(0,5).map(x => '<div class="ditem"><span class="nm">' + x.name + '</span><span class="info" style="color:#b02a1e">+' + x.dl.toFixed(0) + ' л (+' + x.pct.toFixed(0) + '%)</span></div>').join('')
         : '<div class="dok">✓ перерасхода свыше 10% нет</div>');
 
+    html += '<div class="dcard" id="dashHomeCard"><h3 data-go="prox">🏠 Дома в рабочее время<span class="go2">открыть →</span></h3><div id="dashHomeBody" style="color:var(--mut);font-size:13px">проверяю…</div></div>';
     grid.innerHTML = html;
     hookDash();
+    dashHome();
     $('dashProg').textContent = 'обновлено ' + new Date().toLocaleTimeString().slice(0,5);
   } catch(e){
     grid.innerHTML = html;
     hookDash();
     $('dashProg').textContent = '⚠ ' + e.message;
   }
+}
+
+let dashHomeCache = null;
+async function dashHome(force){
+  const box = $('dashHomeBody'); if(!box) return;
+  if(!force && dashHomeCache && Date.now() - dashHomeCache.t < 180000 && dashHomeCache.day === todayLocal()){ box.innerHTML = dashHomeCache.html; return; }
+  try {
+    await syncWorkHours();
+    const today = todayLocal();
+    const from = timeToMin(SET.workFrom), to = timeToMin(SET.workTo);
+    const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+    const list = units.filter(u => cars[u.id] && cars[u.id].home_lat != null && !cars[u.id].hidden);
+    if(!list.length){ box.textContent = 'Ни у одной машины не задан дом (Карта → 🏠 Зона дома).'; return; }
+    const found = []; let idx = 0, failed = 0;
+    const worker = async () => {
+      while(idx < list.length){
+        const u = list[idx++], c = cars[u.id];
+        let pts = [];
+        try { pts = await fetchTrack(u.id, today); } catch(e){ failed++; continue; }
+        const home = { lat:+c.home_lat, lon:+c.home_lon }, R = c.home_radius || 150;
+        let first = null, last = null;
+        for(const p of pts){
+          const m = tsToMin(p.t);
+          if(m < from || m > to) continue;
+          if(hav(p, home) * 1000 <= R){ if(first === null) first = p.t; last = p.t; }
+        }
+        const nowHome = u.pos && hav(u.pos, home) * 1000 <= R;
+        if(first !== null || (nowHome && nowMin >= from && nowMin <= to)){
+          found.push({ id:u.id, name:c.plate || u.name, first, last, nowHome:!!nowHome });
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    found.sort((a,b) => (a.first||0) - (b.first||0));
+    let html;
+    if(nowMin < from && !found.length) html = '<div class="dok">Рабочий день ещё не начался (' + SET.workFrom + '–' + SET.workTo + ')</div>';
+    else if(!found.length) html = '<div class="dok">✓ в рабочее время (' + SET.workFrom + '–' + SET.workTo + ') дома никто не был</div>';
+    else html = '<div style="font-size:12px;color:var(--mut);margin-bottom:6px">Рабочее время ' + SET.workFrom + '–' + SET.workTo + ' · машин: ' + found.length + '</div>' +
+      found.map(f => '<div class="ditem"><span class="nm"><b class="carlink" onclick="openCarCard(' + f.id + ')">' + f.name + '</b></span><span class="info" style="color:#b02a1e">' +
+        (f.first ? 'с ' + hm(f.first) : '') + (f.nowHome ? ' · сейчас дома' : (f.last ? ' · до ' + hm(f.last) : '')) + '</span></div>').join('');
+    if(failed) html += '<div style="font-size:11px;color:var(--mut);margin-top:6px">⚠ треки не загрузились: ' + failed + '</div>';
+    dashHomeCache = { t:Date.now(), day:today, html };
+    box.innerHTML = html;
+  } catch(e){ box.textContent = 'Ошибка: ' + e.message; }
 }
 
 function hookDash(){
@@ -3953,7 +4022,7 @@ function hookDash(){
     dashReport();
   };
 }
-$('dashRun').onclick = dashReport;
+$('dashRun').onclick = () => { dashHomeCache = null; dashReport(); };
 
 /* ================= СТОИМОСТЬ ВЛАДЕНИЯ ================= */
 let costRows = null, costPeriod = null;
@@ -4857,13 +4926,14 @@ $('pxHomeClear').onclick = async () => {
 
 /* проверка «дома в рабочее время» за конкретный день (ретроспективно) */
 $('pxHomeCheckBtn').onclick = async () => {
+  await syncWorkHours();
   const date = $('pxDate').value;
   if(!date){ alert('Выбери дату'); return; }
   try { await loadCars(); } catch(e){}
   const withHome = garageUnits().filter(g => cars[g.id] && cars[g.id].home_lat != null);
   if(!withHome.length){ $('pxHomeAlertEmpty').textContent = 'Ни у одной машины не задан дом.'; $('pxHomeAlertEmpty').style.display='block'; $('pxHomeAlertTable').style.display='none'; return; }
   $('pxHomeAlertEmpty').textContent = 'проверяю…'; $('pxHomeAlertEmpty').style.display = 'block'; $('pxHomeAlertTable').style.display = 'none';
-  const startMin = timeToMin(SET.start), endMin = timeToMin(SET.end);
+  const startMin = timeToMin(SET.workFrom), endMin = timeToMin(SET.workTo);
   const found = [];
   for(const g of withHome){
     const c = cars[g.id];
@@ -4882,7 +4952,7 @@ $('pxHomeCheckBtn').onclick = async () => {
   ).join('');
   $('pxHomeAlertTable').style.display = found.length ? 'table' : 'none';
   $('pxHomeAlertEmpty').style.display = found.length ? 'none' : 'block';
-  $('pxHomeAlertEmpty').textContent = found.length ? '' : 'За ' + date + ' в рабочее время (' + SET.start + '–' + SET.end + ') дома никто не был.';
+  $('pxHomeAlertEmpty').textContent = found.length ? '' : 'За ' + date + ' в рабочее время (' + SET.workFrom + '–' + SET.workTo + ') дома никто не был.';
 };
 
 /* живой мониторинг «дома в рабочее время» — бразуерные уведомления */
@@ -4891,7 +4961,7 @@ function checkHomeLive(){
   if(!$('pxHomeLive') || !$('pxHomeLive').checked) return;
   const today = todayLocal();
   const mins = new Date().getHours()*60 + new Date().getMinutes();
-  if(mins < timeToMin(SET.start) || mins > timeToMin(SET.end)) return;
+  if(mins < timeToMin(SET.workFrom) || mins > timeToMin(SET.workTo)) return;
   units.forEach(u => {
     if(!u.pos) return;
     const c = cars[u.id];
